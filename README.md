@@ -1,3 +1,10 @@
+```text
+╭─────────────────────────────────────────────────────────────────────────╮
+│  █▀█ █▀█ █ █ ▀█▀ █▀▀ █▀█   █▀▀ █▀█ █▀▄ █▀▀           [ rcd ] v0.1.0 ⚡  │
+│  █▀▄ █▄█ █▄█  █  ██▄ █▀▄   █▄▄ █▄█ █▄▀ ██▄     Autonomous Coding Agent  │
+╰─────────────────────────────────────────────────────────────────────────╯
+```
+
 # routercode (rcd)
 
 A local, autonomous terminal coding agent. Run `rcd` inside any project folder, type your task, and the agent inspects the codebase, edits files with exact precision, executes bash commands, and iterates autonomously until the task is done.
@@ -182,7 +189,7 @@ sequenceDiagram
   - Interactively requests API keys on `rcd login` and auto-refreshes model metadata.
 - **Terminal User Interface (`src/tui/`)**:
   - Built with **Ink (React for terminal CLIs)**.
-  - **Header Component (`Header.tsx`)**: Displays active model name, active provider, unique session ID, and current project path.
+  - **Header Component (`Header.tsx`)**: Displays the stylish ASCII block logo (`routercode [ rcd ]`), active model name, active provider, unique session ID, current project path, and auto-approve badge.
   - **Tool Cards (`ToolCard.tsx`)**: Visual cards rendering tool name, inputs (target file or command), execution state (running/done/error), and live output previews.
   - **Input & Keyboard Controls (`App.tsx`)**: Seamless input handling, slash command interception, interactive confirmation prompts (Y/N), and `Ctrl+C` interrupt handling (aborts running loops without terminating the process; exits if idle).
 
