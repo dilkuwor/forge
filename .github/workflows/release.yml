@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g. v0.1.0)'
+        required: false
+        default: 'v0.1.0'
 
 permissions:
   contents: write
@@ -16,10 +22,13 @@ jobs:
       matrix:
         include:
           - os: macos-14
+            target: bun-darwin-arm64
             binary_name: rcd-darwin-arm64
-          - os: macos-13
+          - os: macos-14
+            target: bun-darwin-x64
             binary_name: rcd-darwin-x64
           - os: ubuntu-latest
+            target: bun-linux-x64
             binary_name: rcd-linux-x64
 
     steps:
@@ -36,7 +45,7 @@ jobs:
 
       - name: Compile standalone binary
         run: |
-          bun build --compile --minify src/cli.ts --outfile ${{ matrix.binary_name }}
+          bun build --compile --minify --target=${{ matrix.target }} src/cli.ts --outfile ${{ matrix.binary_name }}
           chmod +x ${{ matrix.binary_name }}
 
       - name: Upload binary artifact
@@ -62,6 +71,7 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag_name || 'v0.1.0' }}
           files: |
             ./dist-binaries/rcd-darwin-arm64
             ./dist-binaries/rcd-darwin-x64
