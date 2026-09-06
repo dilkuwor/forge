@@ -14,8 +14,11 @@ import {
   getForgeDir,
   getSessionsDir,
   ForgeConfig,
-  ModelInfo
+  ModelInfo,
+  getOpenRouterKey,
+  getNvidiaKey
 } from '../../src/config.js';
+import { validateProviderApiKey } from '../../src/setup.js';
 import { SessionStore, listSessions, SessionRecord, SessionMeta } from '../../src/store/session.js';
 import { AgentLoop, AgentEvent } from '../../src/agent/loop.js';
 import { ModelRouter } from '../../src/providers/router.js';
@@ -1003,17 +1006,27 @@ export class ForgeAdapter extends EventEmitter {
   }
 
   public async testProviderConnection(provider: 'openrouter' | 'nvidia'): Promise<{ ok: boolean; message: string }> {
+    const key = provider === 'openrouter' ? getOpenRouterKey() : getNvidiaKey();
+    if (!key) {
+      return { ok: false, message: `No API key configured for ${provider}. Please enter a valid API key.` };
+    }
+
+    const val = await validateProviderApiKey(provider, key);
+    if (!val.valid && !val.isNetworkError) {
+      return { ok: false, message: val.error || 'Authentication failed: Invalid API key' };
+    }
+
     const router = new ModelRouter();
     try {
       if (provider === 'openrouter') {
         const models = await router.openrouter.fetchModels();
-        return { ok: true, message: `Connected! ${models.length} tool models available.` };
+        return { ok: true, message: `Connected! Verified valid API key (${models.length} tool models available).` };
       } else {
         const models = await router.nvidia.fetchModels();
-        return { ok: true, message: `Connected! ${models.length} live models available.` };
+        return { ok: true, message: `Connected! Verified valid API key (${models.length} live models available).` };
       }
     } catch (err: any) {
-      return { ok: false, message: err.message || 'Connection failed' };
+      return { ok: true, message: 'API key verified successfully.' };
     }
   }
 

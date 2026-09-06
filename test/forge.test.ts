@@ -84,7 +84,8 @@ describe('forge test suite', () => {
     const router = new ModelRouter({ openrouter: mockProvider });
     const loop = new AgentLoop({
       projectRoot: tempDir,
-      router
+      router,
+      model: 'openrouter/free'
     });
 
     const result = await loop.run('What does this repository do?');
@@ -156,6 +157,7 @@ describe('forge test suite', () => {
     const loop = new AgentLoop({
       projectRoot: tempDir,
       router: new ModelRouter({ openrouter: mockProvider }),
+      model: 'openrouter/free',
       confirmConfig: { edit: true, bash: false },
       onConfirm: async (prompt) => {
         confirmPrompted = true;

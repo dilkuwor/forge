@@ -55,6 +55,15 @@ export class ModelRouter {
       return this.nvidia;
     }
 
+    // If model explicitly belongs to OpenRouter
+    const isOpenRouterModel =
+      model.startsWith('openrouter/') ||
+      model.includes(':free');
+
+    if (isOpenRouterModel) {
+      return this.openrouter;
+    }
+
     if (config.defaultProvider === 'nvidia' && (hasNvidiaKey || !hasOpenRouterKey)) {
       return this.nvidia;
     }

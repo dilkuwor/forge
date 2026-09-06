@@ -1,14 +1,21 @@
+import fs from 'node:fs';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { WebSocket } from 'ws';
 import { startServer, RunningServer, getEmbeddedDashboardHtml } from '../src/server.js';
 import { maskApiKey, ForgeAdapter } from '../src/forge-adapter.js';
 import { formatTokens, resolveModelContextLimit } from '../src/token-utils.js';
+import { loadAuth, getAuthPath } from '../../src/config.js';
 
 describe('Forge UI Server API & Security Test Suite', () => {
   let serverInstance: RunningServer;
   let baseUrl: string;
+  let originalAuth: any;
+  let originalEnvKey: string | undefined;
 
   beforeAll(async () => {
+    originalAuth = loadAuth();
+    originalEnvKey = process.env.OPENROUTER_API_KEY;
+
     // Start on available test port
     serverInstance = await startServer({
       port: 4899,
@@ -21,6 +28,16 @@ describe('Forge UI Server API & Security Test Suite', () => {
   afterAll(async () => {
     if (serverInstance) {
       await serverInstance.close();
+    }
+    // Restore auth state so tests do not pollute user ~/.forge/auth.json
+    try {
+      const authPath = getAuthPath();
+      fs.writeFileSync(authPath, JSON.stringify(originalAuth, null, 2), 'utf8');
+    } catch {}
+    if (originalEnvKey !== undefined) {
+      process.env.OPENROUTER_API_KEY = originalEnvKey;
+    } else {
+      delete process.env.OPENROUTER_API_KEY;
     }
   });
 
