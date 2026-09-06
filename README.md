@@ -89,11 +89,13 @@ flowchart TD
         Config["Config: ~/.forge/config.json"]
         Auth["Auth Store: ~/.forge/auth.json"]
         ModelCache["Model Cache: ~/.forge/models-cache.json"]
+        Todos["Todos: ~/.forge/todos.json"]
         Sessions["JSONL Sessions: ~/.forge/sessions/*.jsonl"]
         ProjectMd["Project Overrides: ./.forge/project.md"]
 
         CLI -.-> Auth
         CLI -.-> Config
+        CLI -.-> Todos
         Router -.-> ModelCache
         Router -.-> Config
         Loop -.-> Sessions
@@ -252,11 +254,13 @@ Only 8 core tools are available to prevent unexpected behavior:
   - Pre-blocks retired models (`deepseek-ai/deepseek-v4-flash`).
   - Prioritizes live models: `nvidia/nemotron-3-super-120b-a12b`, `nvidia/nemotron-3-ultra-550b-a55b`, and `deepseek-ai/deepseek-v4-flash-0731`.
 
-### 7. Storage & Auditing (`src/store/session.ts` & `src/config.ts`)
+### 7. Storage & Auditing (`src/store/session.ts`, `src/config.ts`, `src/todo.ts`)
 - **Sessions Directory (`~/.forge/sessions/<id>.jsonl`)**:
   - Every interaction, tool invocation, shell output, and error is stored in append-only JSON Lines format for auditing, debugging, and review.
 - **Config & Auth (`~/.forge/config.json`, `~/.forge/auth.json`)**:
-  - Stores user preferences, default models, fallback chains, confirmation toggles, and API keys with secure local filesystem permissions.
+  - Stores user preferences, default models, fallback chains, confirmation toggles, and API keys with secure local filesystem permissions (`0o700` directory, `0o600` auth).
+- **Persistent Todos (`~/.forge/todos.json`)**:
+  - Maintains the persistent todo checklist across CLI commands (`forge todo`) and TUI sessions.
 
 ---
 
@@ -264,17 +268,21 @@ Only 8 core tools are available to prevent unexpected behavior:
 
 ### CLI Commands
 ```bash
-forge                  # Start interactive TUI in current directory (auto-launches setup on first run)
-forge setup            # Interactively configure provider, API key, and default model
-forge -y               # Start TUI with Auto-Approve ON (no permission prompts)
-forge run "task"       # One-shot headless execution without TUI
-forge run "task" -y    # Run headless with Auto-Approve (no permission prompts)
-forge login openrouter # Configure OpenRouter API key and cache free/tool models
-forge login nvidia     # Configure NVIDIA NIM API key and cache live models
-forge models           # Display active model, fallbacks, and cached model IDs
-forge uninstall        # Cleanly uninstall Forge CLI, shell exports, and configuration
-forge uninstall --purge # Completely remove all Forge data including credentials & sessions
-forge uninstall -y     # Skip interactive confirmation prompt
+forge                           # Start interactive TUI in current directory (auto-launches setup on first run)
+forge "<task>"                  # Start TUI with an initial prompt
+forge -y, --yes                 # Start TUI with Auto-Approve ON (no permission prompts)
+forge -r, --resume [id]         # Resume a previous session (most recent when id is omitted)
+forge -m, --model <name>        # Use a specific model for this invocation
+forge run "<task>" [-y]         # One-shot headless execution without TUI (-y for auto-approve)
+forge setup                     # Interactively configure AI provider, API key, and default model
+forge login openrouter [key]    # Configure OpenRouter API key and cache free/tool models
+forge login nvidia [key]        # Configure NVIDIA NIM API key and cache live models
+forge models                    # Display default provider, active model, fallbacks, and cached models
+forge sessions                  # List recent sessions
+forge todo <add|list|toggle|remove> [args] # Manage persistent session/project todo list
+forge uninstall [--purge] [-y]  # Cleanly uninstall Forge CLI, shell exports, and configuration
+forge --help                    # Show CLI help and usage message
+forge --version                 # Display installed Forge version
 ```
 
 ### TUI Slash Commands
@@ -284,9 +292,12 @@ Type these commands into the prompt bar during an interactive `forge` session:
 - `/provider [openrouter|nvidia]` — Show or switch active provider.
 - `/confirm [on|off]` — Toggle permission prompts / Auto-Approve on the fly.
 - `/new` — Reset the session, clear working memory, and generate a new session ID.
+- `/resume [id]` — Resume a previous session by ID or pick the latest.
+- `/sessions` — List recent interactive sessions.
 - `/compact` — Manually trigger history compaction to reclaim token headroom.
 - `/diff` — Run `git diff` and display current uncommitted changes.
-- `/stop` — Abort the currently running agent loop.
+- `/stop` — Abort the currently running agent loop (preserves session history).
+- `/exit` — Quit Forge.
 
 ---
 
@@ -428,6 +439,9 @@ npm install
 
 # Build CLI binary
 npm run build
+
+# Typecheck codebase
+npm run typecheck
 
 # Run unit and integration tests (Vitest)
 npm test

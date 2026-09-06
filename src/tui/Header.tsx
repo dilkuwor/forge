@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { VERSION } from '../version.js';
 
 export interface HeaderProps {
   model: string;
@@ -7,26 +8,13 @@ export interface HeaderProps {
   sessionId: string;
   cwd: string;
   autoApprove?: boolean;
+  resumed?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({
-  model,
-  provider,
-  sessionId,
-  cwd,
-  autoApprove
-}) => {
+export const Header: React.FC<HeaderProps> = ({ model, provider, sessionId, cwd, autoApprove, resumed }) => {
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor="cyan"
-      paddingX={1}
-      paddingY={0}
-      marginBottom={1}
-    >
-      {/* Top Stylish Logo & Badge */}
-      <Box justifyContent="space-between" alignItems="flex-start" marginY={0}>
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} paddingY={0} marginBottom={1}>
+      <Box justifyContent="space-between" alignItems="flex-start">
         <Box flexDirection="column">
           <Box>
             <Text bold color="cyan">
@@ -51,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
             <Text backgroundColor="cyan" color="black" bold>
               {' forge '}
             </Text>
-            <Text color="gray"> v0.1.0 </Text>
+            <Text color="gray"> v{VERSION} </Text>
             <Text color="yellow">⚡</Text>
           </Box>
           <Box>
@@ -68,13 +56,11 @@ export const Header: React.FC<HeaderProps> = ({
         </Box>
       </Box>
 
-      {/* Divider */}
-      <Box marginY={0}>
+      <Box>
         <Text color="gray">{'─'.repeat(54)}</Text>
       </Box>
 
-      {/* Metadata Chips */}
-      <Box justifyContent="space-between" marginY={0}>
+      <Box justifyContent="space-between">
         <Box>
           <Text color="gray">model: </Text>
           <Text bold color="green">
@@ -87,6 +73,7 @@ export const Header: React.FC<HeaderProps> = ({
           <Text bold color="yellow">
             {sessionId}
           </Text>
+          {resumed ? <Text color="magenta"> (resumed)</Text> : null}
         </Box>
       </Box>
 

@@ -5,11 +5,12 @@ import { App } from './App.js';
 export interface TUIOptions {
   initialPrompt?: string;
   noConfirm?: boolean;
+  resumeSessionId?: string;
+  model?: string;
 }
 
 export async function startTUI(options?: string | TUIOptions): Promise<void> {
-  const opts: TUIOptions =
-    typeof options === 'string' ? { initialPrompt: options } : options || {};
-  const instance = render(React.createElement(App, opts));
+  const opts: TUIOptions = typeof options === 'string' ? { initialPrompt: options } : options || {};
+  const instance = render(React.createElement(App, opts), { exitOnCtrlC: false });
   await instance.waitUntilExit();
 }

@@ -4,39 +4,68 @@ import { Box, Text } from 'ink';
 export interface ToolCardProps {
   id: string;
   name: string;
-  args: Record<string, any>;
+  args: Record<string, unknown>;
   result?: string;
-  error?: boolean;
-  status: 'running' | 'done' | 'error';
+  status: 'running' | 'done' | 'error' | 'denied';
+  /** Compact rendering for history (single line + short result). */
+  compact?: boolean;
 }
 
-export const ToolCard: React.FC<ToolCardProps> = ({ name, args, result, status }) => {
+export function summarizeToolArgs(name: string, args: Record<string, unknown>): string {
+  const s = (v: unknown) => (typeof v === 'string' ? v : '');
+  switch (name) {
+    case 'read_file': {
+      const range = args.start || args.end ? `:${args.start ?? 1}-${args.end ?? ''}` : '';
+      return `${s(args.path)}${range}`;
+    }
+    case 'write_file':
+    case 'edit_file':
+    case 'list_dir':
+      return s(args.path) || '.';
+    case 'glob':
+      return s(args.pattern);
+    case 'grep':
+      return `${s(args.pattern)}${args.glob ? ` (${s(args.glob)})` : ''}`;
+    case 'bash':
+      return s(args.command);
+    case 'todo':
+      return Array.isArray(args.items) ? `${args.items.length} items` : '';
+    default:
+      return JSON.stringify(args).slice(0, 80);
+  }
+}
+
+export const ToolCard: React.FC<ToolCardProps> = ({ name, args, result, status, compact }) => {
   const isError = status === 'error';
+  const isDenied = status === 'denied';
   const isRunning = status === 'running';
 
-  const borderColor = isError ? 'red' : isRunning ? 'yellow' : 'green';
-  const statusLabel = isError ? '[ERROR]' : isRunning ? '[RUNNING]' : '[DONE]';
+  const color = isDenied ? 'yellow' : isError ? 'red' : isRunning ? 'yellow' : 'green';
+  const icon = isDenied ? '⊘' : isError ? '✖' : isRunning ? '…' : '✔';
+  const detail = summarizeToolArgs(name, args);
+  const maxDetail = compact ? 70 : 90;
 
-  // Summarize main argument
-  const detail = args.path || args.command || args.pattern || (args.items ? `${args.items.length} items` : '');
+  const resultText = result
+    ? result.length > (compact ? 160 : 400)
+      ? result.slice(0, compact ? 160 : 400) + '…'
+      : result
+    : '';
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={borderColor} paddingX={1} marginY={0}>
+    <Box flexDirection="column" marginLeft={1}>
       <Box>
-        <Text bold color={isError ? 'red' : isRunning ? 'yellow' : 'cyan'}>
-          tool: {name}
+        <Text color={color}>{icon} </Text>
+        <Text bold color="cyan">
+          {name}
         </Text>
         {detail ? (
-          <Text color="gray"> ({typeof detail === 'string' ? detail.slice(0, 60) : JSON.stringify(detail)})</Text>
+          <Text color="gray"> {detail.length > maxDetail ? detail.slice(0, maxDetail) + '…' : detail}</Text>
         ) : null}
-        <Box flexGrow={1} />
-        <Text color={isError ? 'red' : isRunning ? 'yellow' : 'green'}>{statusLabel}</Text>
       </Box>
-
-      {result ? (
-        <Box marginTop={0}>
-          <Text color={isError ? 'red' : 'gray'}>
-            {result.length > 200 ? result.slice(0, 200) + '...' : result}
+      {resultText && (!compact || isError || isDenied) ? (
+        <Box marginLeft={2}>
+          <Text color={isError || isDenied ? color : 'gray'} wrap="truncate-end">
+            {resultText.split('\n').slice(0, compact ? 2 : 6).join('\n')}
           </Text>
         </Box>
       ) : null}

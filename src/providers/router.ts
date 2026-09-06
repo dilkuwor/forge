@@ -3,287 +3,364 @@ import {
   loadModelsCache,
   saveModelsCache,
   getNvidiaKey,
-  getOpenRouterKey
+  getOpenRouterKey,
+  DeadModelEntry,
+  ProviderName
 } from '../config.js';
 import { OpenRouterProvider } from './openrouter.js';
 import { NvidiaProvider, RETIRED_NVIDIA_MODELS } from './nvidia.js';
-import { ChatOptions, ChatResponse, ProviderClient, ProviderEvent } from './types.js';
+import { ChatOptions, ChatResponse, ProviderClient } from './types.js';
+import { classifyError, ClassifiedError, ModelExhaustedError } from './errors.js';
 
 export interface ModelRouterOptions {
   openrouter?: ProviderClient;
   nvidia?: ProviderClient;
+  /** Permanently dead models (overrides the on-disk cache when provided). */
   deadModels?: Set<string>;
+  /** Max retries for transient errors (429/5xx/network) on the same model. */
+  maxRetries?: number;
+  /** Base backoff in ms (doubles per retry). */
+  baseDelayMs?: number;
+  /** Cooldown applied to models that return 404 / tools-unsupported. */
+  cooldownMs?: number;
+  /** Injectable sleep for tests. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** When false, cooldown/dead changes are not persisted to disk. */
+  persist?: boolean;
+}
+
+export interface RoutedChatResponse extends ChatResponse {
+  finalModel: string;
+}
+
+export class RoutingError extends Error {
+  public readonly classified: ClassifiedError;
+  public readonly model: string;
+  constructor(model: string, classified: ClassifiedError) {
+    super(classified.message);
+    this.name = 'RoutingError';
+    this.model = model;
+    this.classified = classified;
+  }
+}
+
+const DEFAULT_COOLDOWN_MS = 30 * 60 * 1000;
+
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortErr());
+      return;
+    }
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(abortErr());
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function abortErr(): Error {
+  const e = new Error('Operation cancelled');
+  e.name = 'AbortError';
+  return e;
 }
 
 export class ModelRouter {
   public openrouter: ProviderClient;
   public nvidia: ProviderClient;
   private deadModels: Set<string>;
-  private isCustomOpenRouter: boolean;
-  private isCustomNvidia: boolean;
+  private cooldowns: Map<string, DeadModelEntry>;
+  private readonly isCustomOpenRouter: boolean;
+  private readonly isCustomNvidia: boolean;
+  private readonly maxRetries: number;
+  private readonly baseDelayMs: number;
+  private readonly cooldownMs: number;
+  private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+  private readonly persist: boolean;
 
   constructor(options?: ModelRouterOptions) {
     this.openrouter = options?.openrouter || new OpenRouterProvider();
     this.nvidia = options?.nvidia || new NvidiaProvider();
     this.isCustomOpenRouter = Boolean(options?.openrouter);
     this.isCustomNvidia = Boolean(options?.nvidia);
+    this.maxRetries = options?.maxRetries ?? 2;
+    this.baseDelayMs = options?.baseDelayMs ?? 1000;
+    this.cooldownMs = options?.cooldownMs ?? DEFAULT_COOLDOWN_MS;
+    this.sleep = options?.sleep || defaultSleep;
+    this.persist = options?.persist ?? !options?.deadModels;
+
+    const cache = loadModelsCache();
     if (options?.deadModels) {
       this.deadModels = new Set(options.deadModels);
+      this.cooldowns = new Map();
     } else {
-      const cache = loadModelsCache();
       this.deadModels = new Set([...RETIRED_NVIDIA_MODELS, ...(cache.deadModels || [])]);
+      this.cooldowns = new Map(Object.entries(cache.cooldowns || {}));
+      this.pruneCooldowns();
     }
   }
 
-  public getDeadModels(): Set<string> {
-    return this.deadModels;
+  // ---------------------------------------------------------------------
+  // Availability bookkeeping
+  // ---------------------------------------------------------------------
+
+  private pruneCooldowns(): boolean {
+    const now = Date.now();
+    let changed = false;
+    for (const [model, entry] of this.cooldowns) {
+      if (Date.parse(entry.until) <= now) {
+        this.cooldowns.delete(model);
+        changed = true;
+      }
+    }
+    return changed;
   }
 
-  public markModelDead(model: string): void {
+  private persistAvailability(): void {
+    if (!this.persist) return;
+    try {
+      saveModelsCache({
+        deadModels: Array.from(this.deadModels),
+        cooldowns: Object.fromEntries(this.cooldowns)
+      });
+    } catch {
+      // Best-effort; availability state is a cache.
+    }
+  }
+
+  /** Models that are currently unavailable: permanently dead + in cooldown. */
+  public getDeadModels(): Set<string> {
+    this.pruneCooldowns();
+    return new Set([...this.deadModels, ...this.cooldowns.keys()]);
+  }
+
+  public isModelAvailable(model: string): boolean {
+    return !this.getDeadModels().has(model);
+  }
+
+  public markModelDead(model: string, reason?: string): void {
     this.deadModels.add(model);
-    saveModelsCache({ deadModels: Array.from(this.deadModels) });
+    this.cooldowns.delete(model);
+    this.persistAvailability();
+    void reason;
+  }
+
+  public markModelCooldown(model: string, reason?: string, ms: number = this.cooldownMs): void {
+    if (this.deadModels.has(model)) return;
+    this.cooldowns.set(model, { until: new Date(Date.now() + ms).toISOString(), reason });
+    this.persistAvailability();
+  }
+
+  public clearModelStatus(model: string): void {
+    const had = this.deadModels.delete(model) || this.cooldowns.delete(model);
+    if (had) this.persistAvailability();
+  }
+
+  // ---------------------------------------------------------------------
+  // Provider resolution
+  // ---------------------------------------------------------------------
+
+  private hasCredentials(provider: ProviderName): boolean {
+    if (provider === 'openrouter') return this.isCustomOpenRouter || Boolean(getOpenRouterKey());
+    return this.isCustomNvidia || Boolean(getNvidiaKey());
   }
 
   public resolveProviderForModel(model: string): ProviderClient {
-    const config = loadConfig();
-    const hasNvidiaKey = Boolean(getNvidiaKey());
-    const hasOpenRouterKey = Boolean(getOpenRouterKey());
-
-    // 1. Explicit OpenRouter models (free tags, or starting with openrouter/)
+    // 1. Explicit OpenRouter models
     if (model.startsWith('openrouter/') || model.includes(':free')) {
       return this.openrouter;
     }
 
-    // 2. Explicit NVIDIA NIM models
-    const isNvidiaModel =
-      model.startsWith('nvidia/') ||
-      model.startsWith('meta/llama') ||
-      model.startsWith('deepseek-ai/');
-
-    if (isNvidiaModel) {
+    // 2. Explicit NVIDIA NIM namespaces
+    if (model.startsWith('nvidia/') || model.startsWith('meta/') || model.startsWith('deepseek-ai/')) {
       return this.nvidia;
     }
 
-    // 3. Check cached model lists if known
-    try {
-      const cache = loadModelsCache();
-      const inNvidia = cache.nvidia?.some((m) => m.id === model);
-      const inOpenRouter = cache.openrouter?.some((m) => m.id === model);
-      if (inNvidia && !inOpenRouter) {
-        return this.nvidia;
-      }
-      if (inOpenRouter && !inNvidia) {
-        return this.openrouter;
-      }
-    } catch {}
+    // 3. Known in exactly one cached model list
+    const cache = loadModelsCache();
+    const inNvidia = cache.nvidia.some((m) => m.id === model);
+    const inOpenRouter = cache.openrouter.some((m) => m.id === model);
+    if (inNvidia && !inOpenRouter) return this.nvidia;
+    if (inOpenRouter && !inNvidia) return this.openrouter;
 
-    if (config.defaultProvider === 'nvidia' && (hasNvidiaKey || !hasOpenRouterKey)) {
-      return this.nvidia;
-    }
-
-    if (hasOpenRouterKey) {
-      return this.openrouter;
-    }
-
-    if (hasNvidiaKey) {
-      return this.nvidia;
-    }
-
-    // Default to openrouter client
+    // 4. Default provider if it has credentials, else whichever does.
+    const config = loadConfig();
+    const hasNv = this.hasCredentials('nvidia');
+    const hasOr = this.hasCredentials('openrouter');
+    if (config.defaultProvider === 'nvidia' && (hasNv || !hasOr)) return this.nvidia;
+    if (hasOr) return this.openrouter;
+    if (hasNv) return this.nvidia;
     return this.openrouter;
   }
 
-  public isToolCallUnsupportedError(err: any): boolean {
-    const msg = (err?.message || '').toLowerCase();
-    const code = err?.code || '';
-    return (
-      msg.includes('tool') ||
-      msg.includes('function') ||
-      msg.includes('not supported') ||
-      msg.includes('unsupported parameter') ||
-      code === 'tools_not_supported'
-    );
-  }
+  // ---------------------------------------------------------------------
+  // Candidate selection
+  // ---------------------------------------------------------------------
 
-  public isDeadModelError(err: any): boolean {
-    const status = err?.status || err?.statusCode || err?.response?.status;
-    const msg = (err?.message || '').toLowerCase();
+  private buildCandidates(initialModel: string): string[] {
+    const config = loadConfig();
+    const unavailable = this.getDeadModels();
+    const ordered = Array.from(new Set([initialModel, ...(config.fallbackModels || [])]));
+    let candidates = ordered.filter((m) => !unavailable.has(m));
 
-    // Do NOT treat missing API key or auth errors as dead models
-    if (
-      msg.includes('api key') ||
-      msg.includes('key not found') ||
-      msg.includes('unauthorized') ||
-      status === 401 ||
-      status === 403
-    ) {
-      return false;
+    if (candidates.length === 0) {
+      // Dynamic recovery from the cached model lists.
+      const cache = loadModelsCache();
+      const dynamic: string[] = [];
+      if (this.hasCredentials('nvidia')) {
+        const live = cache.nvidia
+          .filter((m) => m.supportsTools !== false && !unavailable.has(m.id))
+          .map((m) => m.id);
+        dynamic.push(...(live.length > 0 ? live.slice(0, 3) : ['nvidia/nemotron-3-super-120b-a12b']));
+      }
+      if (this.hasCredentials('openrouter')) {
+        const live = cache.openrouter
+          .filter((m) => m.supportsTools !== false && !unavailable.has(m.id))
+          .map((m) => m.id);
+        dynamic.push(...(live.length > 0 ? live.slice(0, 3) : ['openrouter/free']));
+      }
+      candidates = dynamic.filter((m) => !this.deadModels.has(m));
+
+      if (candidates.length === 0) {
+        // Last resort: give the user's chosen model one more chance, clearing
+        // a stale cooldown but never a permanent retirement.
+        if (!this.deadModels.has(initialModel)) {
+          this.cooldowns.delete(initialModel);
+          candidates = [initialModel];
+        }
+      }
     }
 
-    return (
-      status === 404 ||
-      status === 410 ||
-      msg.includes('404') ||
-      msg.includes('410') ||
-      msg.includes('model not found') ||
-      msg.includes('model is retired') ||
-      msg.includes('model is decommissioned') ||
-      msg.includes('decommissioned') ||
-      msg.includes('retired')
-    );
+    // Drop candidates whose provider has no credentials.
+    return candidates.filter((m) => this.hasCredentials(this.resolveProviderForModel(m).name));
   }
 
-  public isRateLimitError(err: any): boolean {
-    const status = err?.status || err?.statusCode || err?.response?.status;
-    const msg = (err?.message || '').toLowerCase();
-    return status === 429 || msg.includes('429') || msg.includes('rate limit');
-  }
+  // ---------------------------------------------------------------------
+  // Chat with fallback
+  // ---------------------------------------------------------------------
 
-  public async chat(options: ChatOptions): Promise<ChatResponse & { finalModel: string }> {
+  public async chat(options: ChatOptions): Promise<RoutedChatResponse> {
     const config = loadConfig();
     const initialModel = options.model || config.defaultModel;
+    const candidates = this.buildCandidates(initialModel);
 
-    // User-selected model first, then live fallbacks
-    const fallbacks = (config.fallbackModels || []).filter((m) => !this.deadModels.has(m));
-    let candidateModels = Array.from(new Set([initialModel, ...fallbacks]));
-
-    // If all current candidate models are marked dead, attempt dynamic recovery
-    const hasRunnable = candidateModels.some((m) => !this.deadModels.has(m));
-    if (!hasRunnable) {
-      const dynamicFallbacks: string[] = [];
-      const hasNvidiaKey = Boolean(getNvidiaKey()) || this.isCustomNvidia;
-      const hasOpenRouterKey = Boolean(getOpenRouterKey()) || this.isCustomOpenRouter;
-      const cache = loadModelsCache();
-
-      if (hasNvidiaKey) {
-        const liveNvidia = (cache.nvidia || [])
-          .filter((m) => m.supportsTools && !this.deadModels.has(m.id))
-          .map((m) => m.id);
-        if (liveNvidia.length > 0) {
-          dynamicFallbacks.push(...liveNvidia.slice(0, 3));
-        } else if (!this.deadModels.has('nvidia/nemotron-3-super-120b-a12b')) {
-          dynamicFallbacks.push('nvidia/nemotron-3-super-120b-a12b');
+    if (candidates.length === 0) {
+      const anyCreds = this.hasCredentials('openrouter') || this.hasCredentials('nvidia');
+      if (!anyCreds) {
+        throw new RoutingError(initialModel, {
+          kind: 'auth',
+          message:
+            'No API key configured. Set OPENROUTER_API_KEY / NVIDIA_API_KEY or run `forge setup`.',
+          retryable: false
+        });
+      }
+      throw new ModelExhaustedError([
+        {
+          model: initialModel,
+          error: {
+            kind: 'model_unavailable',
+            message: 'No available candidate models (all configured models are unavailable).',
+            retryable: false
+          }
         }
-      }
-
-      if (hasOpenRouterKey) {
-        const liveOr = (cache.openrouter || [])
-          .filter((m) => m.supportsTools && !this.deadModels.has(m.id))
-          .map((m) => m.id);
-        if (liveOr.length > 0) {
-          dynamicFallbacks.push(...liveOr.slice(0, 3));
-        } else if (!this.deadModels.has('openrouter/free')) {
-          dynamicFallbacks.push('openrouter/free');
-        }
-      }
-
-      if (dynamicFallbacks.length > 0) {
-        candidateModels = Array.from(new Set([...candidateModels, ...dynamicFallbacks]));
-      } else {
-        // Last resort: un-blacklist initial model and give it a chance
-        this.deadModels.delete(initialModel);
-      }
+      ]);
     }
 
-    if (candidateModels.length === 0) {
-      throw new Error('No available candidate models. All configured fallback models are dead.');
-    }
+    const attempts: Array<{ model: string; error: ClassifiedError }> = [];
+    const notify = (message: string) => options.onEvent?.({ type: 'status', message });
 
-    let lastError: any = null;
-
-    for (const model of candidateModels) {
-      if (this.deadModels.has(model)) {
-        continue;
-      }
-
+    for (let ci = 0; ci < candidates.length; ci++) {
+      const model = candidates[ci];
       const provider = this.resolveProviderForModel(model);
 
-      // Skip candidate if user has no credentials configured for its provider
-      if (provider.name === 'openrouter' && !this.isCustomOpenRouter && !Boolean(getOpenRouterKey())) {
-        continue;
-      }
-      if (provider.name === 'nvidia' && !this.isCustomNvidia && !Boolean(getNvidiaKey())) {
-        continue;
-      }
+      let retries = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (options.signal?.aborted) throw abortErr();
 
-      // Retry up to 2 times on 429
-      let retries = 2;
-      let delayMs = 1000;
+        // Track whether this attempt streamed anything so we can tell the UI
+        // to discard partial output before switching models.
+        let streamedSomething = false;
+        const wrappedOnEvent: ChatOptions['onEvent'] = (ev) => {
+          if (ev.type === 'text' || ev.type === 'thinking') streamedSomething = true;
+          options.onEvent?.(ev);
+        };
 
-      while (retries >= 0) {
         try {
-          const resp = await provider.chat({
-            ...options,
-            model
-          });
-          if (this.deadModels.has(model)) {
-            this.deadModels.delete(model);
-            saveModelsCache({ deadModels: Array.from(this.deadModels) });
+          const resp = await provider.chat({ ...options, model, onEvent: wrappedOnEvent });
+          if (this.cooldowns.has(model)) {
+            this.cooldowns.delete(model);
+            this.persistAvailability();
           }
           return { ...resp, finalModel: model };
-        } catch (err: any) {
-          lastError = err;
+        } catch (err) {
+          const classified = classifyError(err);
 
-          // Check if dead model (404/410)
-          if (this.isDeadModelError(err)) {
-            this.markModelDead(model);
-            if (options.onEvent) {
-              options.onEvent({
-                type: 'text',
-                text: `\n[Router] Model ${model} is dead (404/410). Falling back to next model...\n`
-              });
-            }
-            break; // break retry loop, move to next fallback model
+          // User cancellation: stop everything immediately.
+          if (classified.kind === 'abort') throw err;
+
+          // Oversized prompt: a different model will not help; the agent loop
+          // owns compaction, so surface this without falling back.
+          if (classified.kind === 'context_length') {
+            throw new RoutingError(model, classified);
           }
 
-          // Check if tool call unsupported
-          if (options.tools && options.tools.length > 0 && this.isToolCallUnsupportedError(err)) {
-            if (options.onEvent) {
-              options.onEvent({
-                type: 'text',
-                text: `\n[Router] Model ${model} does not support tool calling. Skipping to next model...\n`
-              });
-            }
-            break; // break retry loop, move to next fallback model
-          }
+          attempts.push({ model, error: classified });
 
-          // Check if 429 rate limit
-          if (this.isRateLimitError(err) && retries > 0) {
-            retries--;
-            if (options.onEvent) {
-              options.onEvent({
-                type: 'text',
-                text: `\n[Router] Rate limited (429) on ${model}. Retrying in ${delayMs}ms...\n`
-              });
-            }
-            await new Promise((r) => setTimeout(r, delayMs));
-            delayMs *= 2;
+          // Transient: retry same model with backoff.
+          if (classified.retryable && retries < this.maxRetries) {
+            const delay = classified.retryAfterMs ?? this.baseDelayMs * 2 ** retries;
+            retries++;
+            notify(
+              `${model}: ${classified.kind === 'rate_limit' ? 'rate limited' : classified.kind} — retrying in ${Math.round(
+                delay / 1000
+              )}s (${retries}/${this.maxRetries})`
+            );
+            await this.sleep(delay, options.signal);
             continue;
           }
 
-          // If it's another error or retries exhausted for 429, fall through to next candidate
-          if (options.onEvent) {
-            options.onEvent({
-              type: 'text',
-              text: `\n[Router] Error on ${model}: ${err.message}. Trying next fallback...\n`
-            });
+          if (classified.kind === 'model_unavailable') {
+            if (classified.status === 410) {
+              this.markModelDead(model, classified.message);
+            } else {
+              this.markModelCooldown(model, classified.message);
+            }
+          } else if (classified.kind === 'tools_unsupported' && options.tools?.length) {
+            this.markModelCooldown(model, classified.message);
           }
-          break;
+
+          const hasNext = ci < candidates.length - 1;
+          if (hasNext) {
+            if (streamedSomething) options.onEvent?.({ type: 'reset' });
+            notify(`${model} failed (${classified.kind}: ${truncate(classified.message, 120)}). Trying ${candidates[ci + 1]}...`);
+          }
+          break; // next candidate
         }
       }
     }
 
-    throw lastError || new Error(`All candidate models failed (${candidateModels.join(', ')}). Run 'forge setup' or '/model' to select an active model.`);
+    // Prefer surfacing an auth error verbatim: it is actionable.
+    const authAttempt = attempts.find((a) => a.error.kind === 'auth');
+    if (authAttempt && attempts.every((a) => a.error.kind === 'auth')) {
+      throw new RoutingError(authAttempt.model, authAttempt.error);
+    }
+    throw new ModelExhaustedError(attempts);
   }
 
   public async initBootCache(): Promise<void> {
-    const promises: Promise<any>[] = [];
-    if (getOpenRouterKey()) {
-      promises.push(this.openrouter.fetchModels().catch(() => []));
-    }
-    if (getNvidiaKey()) {
-      promises.push(this.nvidia.fetchModels().catch(() => []));
-    }
+    const promises: Promise<unknown>[] = [];
+    if (getOpenRouterKey()) promises.push(this.openrouter.fetchModels().catch(() => []));
+    if (getNvidiaKey()) promises.push(this.nvidia.fetchModels().catch(() => []));
     await Promise.all(promises);
   }
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }

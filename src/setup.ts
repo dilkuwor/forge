@@ -1,22 +1,19 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import readline from 'node:readline';
 import {
   ForgeConfig,
   AuthConfig,
-  DEFAULT_CONFIG,
   getConfigPath,
   getAuthPath,
-  getModelsCachePath,
   loadConfig,
   saveConfig,
   loadAuth,
   saveAuth,
-  saveModelsCache,
-  getOpenRouterKey,
-  getNvidiaKey
+  normalizeConfig,
+  writeJsonAtomic
 } from './config.js';
-import { RETIRED_NVIDIA_MODELS, PREFERRED_NVIDIA_MODELS } from './providers/nvidia.js';
+import { NvidiaProvider, PREFERRED_NVIDIA_MODELS } from './providers/nvidia.js';
+import { OpenRouterProvider, OPENROUTER_FALLBACK_MODELS } from './providers/openrouter.js';
 
 export type ConfigStatusType =
   | 'VALID'
@@ -54,33 +51,21 @@ export function loadSetupConfig(customPath?: string): ForgeConfig {
   if (!customPath) return loadConfig();
   if (fs.existsSync(customPath)) {
     try {
-      const raw = fs.readFileSync(customPath, 'utf8');
-      const parsed = JSON.parse(raw);
-      return {
-        ...DEFAULT_CONFIG,
-        ...parsed,
-        confirm: {
-          ...DEFAULT_CONFIG.confirm,
-          ...(parsed.confirm || {})
-        }
-      };
+      return normalizeConfig(JSON.parse(fs.readFileSync(customPath, 'utf8')));
     } catch {}
   }
-  return { ...DEFAULT_CONFIG };
+  return normalizeConfig({});
 }
 
 export function saveSetupConfig(config: Partial<ForgeConfig>, customPath?: string): ForgeConfig {
   if (!customPath) return saveConfig(config);
   const existing = loadSetupConfig(customPath);
-  const updated: ForgeConfig = {
+  const updated = normalizeConfig({
     ...existing,
     ...config,
-    confirm: {
-      ...existing.confirm,
-      ...(config.confirm || {})
-    }
-  };
-  fs.writeFileSync(customPath, JSON.stringify(updated, null, 2), 'utf8');
+    confirm: { ...existing.confirm, ...(config.confirm || {}) }
+  });
+  writeJsonAtomic(customPath, updated, 0o644);
   return updated;
 }
 
@@ -97,11 +82,8 @@ export function loadSetupAuth(customPath?: string): AuthConfig {
 export function saveSetupAuth(auth: Partial<AuthConfig>, customPath?: string): AuthConfig {
   if (!customPath) return saveAuth(auth);
   const existing = loadSetupAuth(customPath);
-  const updated: AuthConfig = {
-    ...existing,
-    ...auth
-  };
-  fs.writeFileSync(customPath, JSON.stringify(updated, null, 2), 'utf8');
+  const updated: AuthConfig = { ...existing, ...auth };
+  writeJsonAtomic(customPath, updated, 0o600);
   return updated;
 }
 
@@ -204,9 +186,8 @@ export async function validateProviderApiKey(
   try {
     if (provider === 'openrouter') {
       const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
-        headers: {
-          Authorization: `Bearer ${cleanKey}`
-        }
+        headers: { Authorization: `Bearer ${cleanKey}` },
+        signal: AbortSignal.timeout(15_000)
       });
 
       if (res.status === 200) {
@@ -234,10 +215,11 @@ export async function validateProviderApiKey(
           Authorization: `Bearer ${cleanKey}`
         },
         body: JSON.stringify({
-          model: 'nvidia/nemotron-3-super-120b-a12b',
+          model: PREFERRED_NVIDIA_MODELS[0],
           messages: [{ role: 'user', content: 'test' }],
           max_tokens: 1
-        })
+        }),
+        signal: AbortSignal.timeout(20_000)
       });
 
       if (res.status === 200) {
@@ -266,65 +248,36 @@ export async function validateProviderApiKey(
 }
 
 /**
- * Fetches available models for a provider using live API or cached fallbacks.
+ * Fetches available models for a provider using the live API, falling back to
+ * built-in defaults when offline. Delegates to the provider implementations so
+ * model-list parsing lives in exactly one place.
  */
 export async function fetchModelsForProvider(
   provider: 'openrouter' | 'nvidia',
   apiKey: string
 ): Promise<string[]> {
+  const envKey = provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'NVIDIA_API_KEY';
+  const previous = process.env[envKey];
+  // Providers read credentials from env/auth; expose the candidate key for this call.
+  if (apiKey) process.env[envKey] = apiKey;
   try {
-    if (provider === 'openrouter') {
-      const res = await fetch('https://openrouter.ai/api/v1/models', {
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
-      });
-      if (res.ok) {
-        const data = (await res.json()) as any;
-        if (data && Array.isArray(data.data)) {
-          const modelList: string[] = [];
-          for (const m of data.data) {
-            const promptPrice = m.pricing?.prompt;
-            const completionPrice = m.pricing?.completion;
-            const isFree =
-              promptPrice === 0 ||
-              promptPrice === '0' ||
-              m.id.endsWith(':free') ||
-              m.id.includes('/free');
-            const supportsTools = Array.isArray(m.supported_parameters)
-              ? m.supported_parameters.includes('tools')
-              : true;
-            if ((isFree || supportsTools) && m.id) {
-              modelList.push(m.id);
-            }
-          }
-          if (modelList.length > 0) return modelList;
-        }
+    const client = provider === 'openrouter' ? new OpenRouterProvider() : new NvidiaProvider();
+    const infos = await client.fetchModelInfos();
+    if (infos.length > 0) {
+      const ids = infos.map((m) => m.id);
+      // Put the recommended default first when present.
+      const recommended = provider === 'openrouter' ? 'openrouter/free' : PREFERRED_NVIDIA_MODELS[0];
+      if (ids.includes(recommended)) {
+        return [recommended, ...ids.filter((id) => id !== recommended)];
       }
-      return [
-        'openrouter/free',
-        'openai/gpt-oss-120b:free',
-        'meta-llama/llama-3.3-70b-instruct:free',
-        'deepseek/deepseek-r1:free'
-      ];
-    } else {
-      // NVIDIA NIM
-      const res = await fetch('https://integrate.api.nvidia.com/v1/models', {
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
-      });
-      if (res.ok) {
-        const data = (await res.json()) as any;
-        if (data && Array.isArray(data.data)) {
-          const list = data.data
-            .map((m: any) => m.id)
-            .filter((id: string) => id && !RETIRED_NVIDIA_MODELS.includes(id));
-          if (list.length > 0) return list;
-        }
-      }
-      return PREFERRED_NVIDIA_MODELS;
+      return provider === 'openrouter' ? [recommended, ...ids] : ids;
     }
+    return provider === 'openrouter' ? OPENROUTER_FALLBACK_MODELS : PREFERRED_NVIDIA_MODELS;
   } catch {
-    return provider === 'openrouter'
-      ? ['openrouter/free', 'openai/gpt-oss-120b:free']
-      : PREFERRED_NVIDIA_MODELS;
+    return provider === 'openrouter' ? OPENROUTER_FALLBACK_MODELS : PREFERRED_NVIDIA_MODELS;
+  } finally {
+    if (previous === undefined) delete process.env[envKey];
+    else process.env[envKey] = previous;
   }
 }
 
@@ -519,14 +472,6 @@ export async function runSetup(options?: SetupOptions): Promise<void> {
   // --- Step 3: Fetch Available Models & Select Default ---
   console.log('Fetching available models...');
   const availableModels = await modelFetcher(selectedProvider, apiKey);
-
-  if (!options?.configPath) {
-    if (selectedProvider === 'openrouter') {
-      saveModelsCache({ openrouter: availableModels.map((id) => ({ id, provider: 'openrouter' })) });
-    } else {
-      saveModelsCache({ nvidia: availableModels.map((id) => ({ id, provider: 'nvidia' })) });
-    }
-  }
 
   const defaultRecommended =
     selectedProvider === 'openrouter'
