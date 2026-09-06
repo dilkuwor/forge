@@ -5,6 +5,7 @@ import { App } from './App.js';
 export interface TUIOptions {
   initialPrompt?: string;
   noConfirm?: boolean;
+  uiUrl?: string;
 }
 
 export async function startTUI(options?: string | TUIOptions): Promise<void> {

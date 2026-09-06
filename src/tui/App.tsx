@@ -28,9 +28,10 @@ interface ConfirmationState {
   resolve: (value: boolean) => void;
 }
 
-export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean }> = ({
+export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?: string }> = ({
   initialPrompt,
-  noConfirm
+  noConfirm,
+  uiUrl
 }) => {
   const { exit } = useApp();
   const config = loadConfig();
@@ -402,6 +403,7 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean }> = ({
         sessionId={sessionId}
         cwd={cwd}
         autoApprove={!confirmConfig.edit && !confirmConfig.bash}
+        uiUrl={uiUrl}
       />
 
       {/* Message History */}

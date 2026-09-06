@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { WebSocket } from 'ws';
-import { startServer, RunningServer } from '../src/server.js';
+import { startServer, RunningServer, getEmbeddedDashboardHtml } from '../src/server.js';
 import { maskApiKey, ForgeAdapter } from '../src/forge-adapter.js';
 import { formatTokens, resolveModelContextLimit } from '../src/token-utils.js';
 
@@ -304,4 +304,48 @@ describe('Forge UI Server API & Security Test Suite', () => {
     expect(compacted.compactions.totalTokensFreed).toBe(47000);
     expect(compacted.tokenUsage.currentContextTokens).toBe(34000);
   });
+
+  it('21. HTML dashboard includes all 8 navigation tabs and their corresponding containers', async () => {
+    // 1. Verify root returns 200
+    const res = await fetch(`${baseUrl}/`);
+    expect(res.status).toBe(200);
+
+    // 2. Verify embedded fallback dashboard contains all 8 tabs and controls
+    const html = getEmbeddedDashboardHtml();
+    const expectedTabs = ['dashboard', 'sessions', 'activity', 'diff', 'models', 'providers', 'settings', 'permissions'];
+    for (const tab of expectedTabs) {
+      expect(html).toContain(`data-tab="${tab}"`);
+      expect(html).toContain(`id="tab-${tab}"`);
+    }
+
+    // Verify key elements exist in embedded dashboard
+    expect(html).toContain('id="api-key-banner"');
+    expect(html).toContain('id="key-input-openrouter"');
+    expect(html).toContain('id="key-input-nvidia"');
+    expect(html).toContain('saveProviderKey');
+    expect(html).toContain('showTab');
+  });
+
+  it('22. POST /api/providers/:provider updates API key and clears API key error state', async () => {
+    const adapter = new ForgeAdapter(process.cwd());
+
+    // Simulate error state from missing API key
+    (adapter as any).currentStatus = 'ERROR';
+    (adapter as any).currentOperation = 'Error: OpenRouter API key not found. Set OPENROUTER_API_KEY or run `forge login openrouter`.';
+
+    expect(adapter.getStatus().status).toBe('ERROR');
+    expect(adapter.getStatus().currentOperation).toContain('OpenRouter API key not found');
+
+    // Update key
+    const res = adapter.setProviderKey('openrouter', 'sk-or-v1-0123456789abcdef0123456789abcdef');
+    expect(res.success).toBe(true);
+    expect(res.keyMasked).toMatch(/^•{8,}/);
+
+    // Verify error state was automatically cleared to IDLE
+    const status = adapter.getStatus();
+    expect(status.status).toBe('IDLE');
+    expect(status.currentOperation).toBe('API key saved. Ready to run task.');
+    expect(process.env.OPENROUTER_API_KEY).toBe('sk-or-v1-0123456789abcdef0123456789abcdef');
+  });
 });
+

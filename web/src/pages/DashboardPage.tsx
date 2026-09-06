@@ -14,6 +14,7 @@ interface DashboardPageProps {
   terminalOutput: string;
   pendingPermission: PendingPermission | null;
   onRefresh: () => void;
+  onNavigate?: (tab: 'dashboard' | 'sessions' | 'activity' | 'diff' | 'models' | 'providers' | 'settings' | 'permissions') => void;
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({
@@ -22,11 +23,33 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   todos,
   terminalOutput,
   pendingPermission,
-  onRefresh
+  onRefresh,
+  onNavigate
 }) => {
   const [taskText, setTaskText] = useState('');
   const [noConfirm, setNoConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [quickKey, setQuickKey] = useState('');
+  const [quickProvider, setQuickProvider] = useState<'openrouter' | 'nvidia'>('openrouter');
+  const [savingKey, setSavingKey] = useState(false);
+  const [keyMsg, setKeyMsg] = useState<string | null>(null);
+
+  const handleQuickSaveKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickKey.trim()) return;
+    setSavingKey(true);
+    try {
+      await api.setProviderKey(quickProvider, quickKey.trim());
+      setKeyMsg(`API key for ${quickProvider} saved successfully!`);
+      setQuickKey('');
+      onRefresh();
+      setTimeout(() => setKeyMsg(null), 4000);
+    } catch (err: any) {
+      alert(`Failed to save key: ${err.message}`);
+    } finally {
+      setSavingKey(false);
+    }
+  };
 
   const handleRunTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +93,63 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   return (
     <>
       <PermissionModal permission={pendingPermission} onResolved={onRefresh} />
+
+      {/* API Key Missing Alert Banner */}
+      {status?.currentOperation && (status.currentOperation.includes('API key not found') || status.currentOperation.toLowerCase().includes('openrouter api key')) && (
+        <div className="forge-card" style={{ border: '1px solid var(--yellow)', background: 'rgba(210, 153, 34, 0.12)', padding: '16px 20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+              <h3 style={{ color: 'var(--yellow)', fontSize: '1rem', margin: 0 }}>API Key Required</h3>
+            </div>
+            {onNavigate && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: '0.8rem', padding: '4px 10px' }}
+                onClick={() => onNavigate('providers')}
+              >
+                Manage Providers →
+              </button>
+            )}
+          </div>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '12px' }}>
+            {status.currentOperation}
+          </p>
+          <form onSubmit={handleQuickSaveKey} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <select
+              className="form-input"
+              style={{ width: 'auto', padding: '6px 10px', fontSize: '0.85rem' }}
+              value={quickProvider}
+              onChange={(e) => setQuickProvider(e.target.value as any)}
+            >
+              <option value="openrouter">OpenRouter API</option>
+              <option value="nvidia">NVIDIA NIM API</option>
+            </select>
+            <input
+              type="password"
+              className="form-input"
+              placeholder={`Paste ${quickProvider === 'openrouter' ? 'sk-or-v1-...' : 'nvapi-...'} key`}
+              style={{ flex: 1, minWidth: '240px', padding: '6px 12px', fontSize: '0.85rem' }}
+              value={quickKey}
+              onChange={(e) => setQuickKey(e.target.value)}
+            />
+            <button
+              type="submit"
+              className="btn btn-primary"
+              style={{ fontSize: '0.85rem', padding: '6px 14px' }}
+              disabled={savingKey || !quickKey.trim()}
+            >
+              {savingKey ? 'Saving...' : 'Save & Connect'}
+            </button>
+          </form>
+          {keyMsg && (
+            <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--green)' }}>
+              {keyMsg}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Task input card */}
       <div className="forge-card">

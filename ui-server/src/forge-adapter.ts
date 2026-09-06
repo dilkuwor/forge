@@ -984,11 +984,20 @@ export class ForgeAdapter extends EventEmitter {
     const cleanKey = apiKey.trim();
     if (provider === 'openrouter') {
       saveAuth({ openrouterApiKey: cleanKey });
+      process.env.OPENROUTER_API_KEY = cleanKey;
     } else if (provider === 'nvidia') {
       saveAuth({ nvidiaApiKey: cleanKey });
+      process.env.NVIDIA_API_KEY = cleanKey;
     } else {
       throw new Error(`Unsupported provider: ${provider}`);
     }
+
+    // If currently in ERROR due to missing API key, automatically clear the error state
+    if (this.currentStatus === 'ERROR' && this.currentOperation.toLowerCase().includes('api key not found')) {
+      this.currentStatus = 'IDLE';
+      this.currentOperation = 'API key saved. Ready to run task.';
+    }
+    this.emitStateUpdate();
 
     return { success: true, keyMasked: maskApiKey(cleanKey)! };
   }

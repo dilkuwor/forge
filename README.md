@@ -19,8 +19,8 @@ curl -fsSL https://raw.githubusercontent.com/dilkuwor/forge/main/install.sh | ba
 
 Then:
 1. **Restart your terminal** (or run `source ~/.zshrc` / `source ~/.bashrc`).
-2. Run `forge login openrouter` or `forge login nvidia` to store your API keys.
-3. Run `forge` inside any project to launch the interactive terminal agent!
+2. Run `forge` inside any project to start! If not configured yet, Forge automatically launches an interactive first-run setup to guide you through provider and model selection.
+3. You can also reconfigure anytime using `forge setup`.
 
 > **Note:**
 > - Node/npm is only needed for local development.
@@ -264,7 +264,8 @@ Only 8 core tools are available to prevent unexpected behavior:
 
 ### CLI Commands
 ```bash
-forge                  # Start interactive TUI in current directory
+forge                  # Start interactive TUI in current directory (auto-launches setup on first run)
+forge setup            # Interactively configure provider, API key, and default model
 forge -y               # Start TUI with Auto-Approve ON (no permission prompts)
 forge run "task"       # One-shot headless execution without TUI
 forge run "task" -y    # Run headless with Auto-Approve (no permission prompts)
@@ -286,6 +287,62 @@ Type these commands into the prompt bar during an interactive `forge` session:
 - `/compact` — Manually trigger history compaction to reclaim token headroom.
 - `/diff` — Run `git diff` and display current uncommitted changes.
 - `/stop` — Abort the currently running agent loop.
+
+---
+
+## First-Run Setup & Configuration Flow
+
+Forge features an automated, guided first-run experience designed to get you productive in seconds without manual JSON editing.
+
+### 1. Automatic First-Run Detection
+When you execute `forge` or `forge ui` in an unconfigured environment (no `~/.forge/config.json` or API keys detected), Forge automatically launches the interactive setup wizard before starting the agent session:
+
+```text
+============================================================
+  ⚡ Welcome to Forge — Autonomous Coding Agent Setup
+============================================================
+
+Select an AI Provider:
+  [1] OpenRouter (Free & tool-capable models, OpenAI, Anthropic, DeepSeek, etc.)
+  [2] NVIDIA NIM (High-speed inference, Llama 3.3, Nemotron, DeepSeek)
+
+Enter choice [1-2] (default: 1): 1
+```
+
+### 2. Guided Step-by-Step Setup
+1. **Provider Selection**: Choose between **OpenRouter** or **NVIDIA NIM**.
+2. **Secure Key Entry**: Prompts for your API key with masked input (`*`). If a key already exists, press Enter to keep it.
+3. **Live Key Validation**: Directly validates credentials against the provider API before proceeding (`openrouter.ai/api/v1/auth/key` or `integrate.api.nvidia.com/v1/chat/completions`).
+4. **Dynamic Model Fetching**: Queries the provider to retrieve live, tool-compatible models.
+5. **Model Selection**: Select from recommended models or enter a custom model identifier.
+6. **Automatic Persistence**: Writes provider preferences to `~/.forge/config.json` and credentials to `~/.forge/auth.json`.
+7. **Immediate Agent Launch**: Seamlessly transitions into the interactive TUI or launches the Web UI without needing to restart the command.
+
+### 3. Self-Healing & Partial Recovery
+If your environment is partially configured, Forge only prompts for what is missing or broken:
+- **Missing API key**: Prompts specifically for the key.
+- **Invalid API key**: Alerts you and offers an interactive menu:
+  - `[1] Re-enter API key`
+  - `[2] Switch provider`
+  - `[3] Exit setup`
+- **Missing Model**: Retains your verified credentials, fetches available models, and lets you select a default model.
+- **Valid Configuration**: Setup is completely bypassed, launching the agent immediately.
+
+### 4. Explicit `forge setup` Command
+You can rerun the configuration wizard at any time to switch providers, update API keys, or pick a different default model:
+
+```bash
+forge setup
+```
+
+### 5. Headless Safety Guard
+Headless commands like `forge run "task"` will **never** hang or block in automated CI/CD pipelines. If configuration or credentials are missing in headless mode, Forge immediately exits with code 1 and outputs clear guidance:
+
+```text
+Error: Forge is not configured.
+Run 'forge setup' interactively to configure your AI provider and API key,
+or provide credentials via OPENROUTER_API_KEY / NVIDIA_API_KEY environment variables.
+```
 
 ---
 

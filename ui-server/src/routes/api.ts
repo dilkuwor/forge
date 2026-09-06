@@ -197,8 +197,13 @@ export async function handleApiRoute(
       return true;
     }
 
-    // POST /api/providers/:provider/key
-    if (pathname.startsWith('/api/providers/') && pathname.endsWith('/key') && method === 'POST') {
+    // POST /api/providers/:provider/key or POST /api/providers/:provider
+    if (
+      pathname.startsWith('/api/providers/') &&
+      !pathname.endsWith('/test') &&
+      pathname !== '/api/providers' &&
+      method === 'POST'
+    ) {
       const parts = pathname.split('/');
       const provider = parts[3] as 'openrouter' | 'nvidia';
       const body = await parseJsonBody(req);
@@ -211,10 +216,18 @@ export async function handleApiRoute(
       return true;
     }
 
-    // POST /api/providers/:provider/test
-    if (pathname.startsWith('/api/providers/') && pathname.endsWith('/test') && method === 'POST') {
+    // POST /api/providers/:provider/test or POST /api/providers/test
+    if (
+      ((pathname.startsWith('/api/providers/') && pathname.endsWith('/test')) || pathname === '/api/providers/test') &&
+      method === 'POST'
+    ) {
+      const body = await parseJsonBody(req);
       const parts = pathname.split('/');
-      const provider = parts[3] as 'openrouter' | 'nvidia';
+      const provider = (parts[3] !== 'test' ? parts[3] : body.provider) as 'openrouter' | 'nvidia';
+      if (!provider) {
+        sendError(res, 400, 'provider is required');
+        return true;
+      }
       const result = await adapter.testProviderConnection(provider);
       sendJson(res, result.ok ? 200 : 400, result);
       return true;

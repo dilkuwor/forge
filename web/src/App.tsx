@@ -72,6 +72,7 @@ export const App: React.FC = () => {
               terminalOutput={terminalOutput}
               pendingPermission={pendingPermission}
               onRefresh={refresh}
+              onNavigate={handleSelectTab}
             />
           )}
 

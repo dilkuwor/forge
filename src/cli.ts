@@ -12,6 +12,7 @@ import {
 import { ModelRouter } from './providers/router.js';
 import { startTUI } from './tui/index.js';
 import { todoStore } from './todo.js';
+import { runSetup, runSetupIfNeeded } from './setup.js';
 
 function askQuestion(query: string): Promise<string> {
   const rl = readline.createInterface({
@@ -250,8 +251,9 @@ function printHelp() {
 forge - Terminal coding agent
 
 USAGE:
-  forge [-y]                Start interactive TUI (-y for auto-approve / no-confirm)
-  forge run "<task>" [-y]   Run a task headless without TUI (-y for auto-approve)
+  forge [--ui] [-y]         Start interactive TUI (--ui to also launch web UI)
+  forge run "<task>" [--ui] Run a task headless without TUI (-y for auto-approve)
+  forge setup               Interactive setup / configure AI provider and model
   forge login openrouter    Set OpenRouter API key and cache free/tool models
   forge login nvidia        Set NVIDIA NIM API key and cache live models
   forge models              List available/cached models and fallbacks
@@ -276,20 +278,56 @@ export async function main() {
   const noConfirm = rawArgs.some(
     (a) => a === '-y' || a === '--y' || a === '--yes' || a === '--no-confirm' || a === '--auto-approve'
   );
+  const withUi = rawArgs.some((a) => a === '--ui' || a === '--with-ui');
   const args = rawArgs.filter(
-    (a) => a !== '-y' && a !== '--y' && a !== '--yes' && a !== '--no-confirm' && a !== '--auto-approve'
+    (a) =>
+      a !== '-y' &&
+      a !== '--y' &&
+      a !== '--yes' &&
+      a !== '--no-confirm' &&
+      a !== '--auto-approve' &&
+      a !== '--ui' &&
+      a !== '--with-ui'
   );
   const command = args[0];
 
+  let uiServerInstance: any = null;
+  const launchUiIfRequested = async () => {
+    if (withUi) {
+      const { startServer } = await import('../ui-server/src/server.js');
+      uiServerInstance = await startServer({ autoApprove: noConfirm, openBrowser: true });
+    }
+  };
+
+  if (command === 'setup') {
+    await runSetup();
+    return;
+  }
+
   if (!command || command === 'start') {
-    // Start TUI
-    await startTUI({ noConfirm });
+    await runSetupIfNeeded({ isHeadless: !process.stdin.isTTY });
+    await launchUiIfRequested();
+    try {
+      await startTUI({ noConfirm, uiUrl: uiServerInstance?.url });
+    } finally {
+      if (uiServerInstance) {
+        await uiServerInstance.close();
+      }
+    }
     return;
   }
 
   if (command === 'run') {
     const task = args.slice(1).join(' ');
-    await handleRunCommand(task, { noConfirm });
+    await runSetupIfNeeded({ isHeadless: true });
+    await launchUiIfRequested();
+    try {
+      await handleRunCommand(task, { noConfirm });
+    } finally {
+      if (uiServerInstance) {
+        await uiServerInstance.close();
+      }
+    }
     return;
   }
 
@@ -315,9 +353,31 @@ export async function main() {
   }
 
   if (command === 'ui') {
-    const portArg = args[1] ? parseInt(args[1], 10) : undefined;
+    const portArg = args[1] && !isNaN(parseInt(args[1], 10)) ? parseInt(args[1], 10) : undefined;
+    const initialPrompt =
+      args[1] && isNaN(parseInt(args[1], 10)) ? args.slice(1).join(' ') : args.slice(2).join(' ');
+    const isHeadless =
+      rawArgs.includes('--headless') || rawArgs.includes('--server-only') || !process.stdin.isTTY;
+
+    // Use same first-run setup logic before starting UI or TUI
+    await runSetupIfNeeded({ isHeadless });
+
     const { startServer } = await import('../ui-server/src/server.js');
-    await startServer({ port: portArg, autoApprove: noConfirm });
+    const serverInstance = await startServer({ port: portArg, autoApprove: noConfirm, openBrowser: true });
+
+    if (isHeadless) {
+      return;
+    }
+
+    try {
+      await startTUI({
+        initialPrompt: initialPrompt || undefined,
+        noConfirm,
+        uiUrl: serverInstance.url
+      });
+    } finally {
+      await serverInstance.close();
+    }
     return;
   }
 
@@ -346,7 +406,15 @@ export async function main() {
     process.exit(1);
   } else {
     // Convenience: `forge "what does this repo do?"` launches TUI with initial prompt
-    await startTUI({ initialPrompt: args.join(' '), noConfirm });
+    await runSetupIfNeeded({ isHeadless: !process.stdin.isTTY });
+    await launchUiIfRequested();
+    try {
+      await startTUI({ initialPrompt: args.join(' '), noConfirm, uiUrl: uiServerInstance?.url });
+    } finally {
+      if (uiServerInstance) {
+        await uiServerInstance.close();
+      }
+    }
   }
 }
 
