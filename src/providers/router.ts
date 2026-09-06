@@ -45,7 +45,12 @@ export class ModelRouter {
     const hasNvidiaKey = Boolean(getNvidiaKey());
     const hasOpenRouterKey = Boolean(getOpenRouterKey());
 
-    // If model explicitly belongs to NVIDIA NIM ecosystem
+    // 1. Explicit OpenRouter models (free tags, or starting with openrouter/)
+    if (model.startsWith('openrouter/') || model.includes(':free')) {
+      return this.openrouter;
+    }
+
+    // 2. Explicit NVIDIA NIM models
     const isNvidiaModel =
       model.startsWith('nvidia/') ||
       model.startsWith('meta/llama') ||
@@ -55,14 +60,18 @@ export class ModelRouter {
       return this.nvidia;
     }
 
-    // If model explicitly belongs to OpenRouter
-    const isOpenRouterModel =
-      model.startsWith('openrouter/') ||
-      model.includes(':free');
-
-    if (isOpenRouterModel) {
-      return this.openrouter;
-    }
+    // 3. Check cached model lists if known
+    try {
+      const cache = loadModelsCache();
+      const inNvidia = cache.nvidia?.some((m) => m.id === model);
+      const inOpenRouter = cache.openrouter?.some((m) => m.id === model);
+      if (inNvidia && !inOpenRouter) {
+        return this.nvidia;
+      }
+      if (inOpenRouter && !inNvidia) {
+        return this.openrouter;
+      }
+    } catch {}
 
     if (config.defaultProvider === 'nvidia' && (hasNvidiaKey || !hasOpenRouterKey)) {
       return this.nvidia;
@@ -132,7 +141,45 @@ export class ModelRouter {
 
     // User-selected model first, then live fallbacks
     const fallbacks = (config.fallbackModels || []).filter((m) => !this.deadModels.has(m));
-    const candidateModels = Array.from(new Set([initialModel, ...fallbacks]));
+    let candidateModels = Array.from(new Set([initialModel, ...fallbacks]));
+
+    // If all current candidate models are marked dead, attempt dynamic recovery
+    const hasRunnable = candidateModels.some((m) => !this.deadModels.has(m));
+    if (!hasRunnable) {
+      const dynamicFallbacks: string[] = [];
+      const hasNvidiaKey = Boolean(getNvidiaKey());
+      const hasOpenRouterKey = Boolean(getOpenRouterKey());
+      const cache = loadModelsCache();
+
+      if (hasNvidiaKey) {
+        const liveNvidia = (cache.nvidia || [])
+          .filter((m) => m.supportsTools && !this.deadModels.has(m.id))
+          .map((m) => m.id);
+        if (liveNvidia.length > 0) {
+          dynamicFallbacks.push(...liveNvidia.slice(0, 3));
+        } else if (!this.deadModels.has('nvidia/nemotron-3-super-120b-a12b')) {
+          dynamicFallbacks.push('nvidia/nemotron-3-super-120b-a12b');
+        }
+      }
+
+      if (hasOpenRouterKey) {
+        const liveOr = (cache.openrouter || [])
+          .filter((m) => m.supportsTools && !this.deadModels.has(m.id))
+          .map((m) => m.id);
+        if (liveOr.length > 0) {
+          dynamicFallbacks.push(...liveOr.slice(0, 3));
+        } else if (!this.deadModels.has('openrouter/free')) {
+          dynamicFallbacks.push('openrouter/free');
+        }
+      }
+
+      if (dynamicFallbacks.length > 0) {
+        candidateModels = Array.from(new Set([...candidateModels, ...dynamicFallbacks]));
+      } else {
+        // Last resort: un-blacklist initial model and give it a chance
+        this.deadModels.delete(initialModel);
+      }
+    }
 
     if (candidateModels.length === 0) {
       throw new Error('No available candidate models. All configured fallback models are dead.');
@@ -157,6 +204,10 @@ export class ModelRouter {
             ...options,
             model
           });
+          if (this.deadModels.has(model)) {
+            this.deadModels.delete(model);
+            saveModelsCache({ deadModels: Array.from(this.deadModels) });
+          }
           return { ...resp, finalModel: model };
         } catch (err: any) {
           lastError = err;
@@ -210,7 +261,7 @@ export class ModelRouter {
       }
     }
 
-    throw lastError || new Error('All candidate models failed.');
+    throw lastError || new Error(`All candidate models failed (${candidateModels.join(', ')}). Run 'forge setup' or '/model' to select an active model.`);
   }
 
   public async initBootCache(): Promise<void> {

@@ -52,7 +52,7 @@ export const DEFAULT_CONFIG: ForgeConfig = {
 };
 
 export function getForgeDir(): string {
-  const dir = path.join(os.homedir(), '.forge');
+  const dir = process.env.FORGE_HOME || process.env.FORGE_DIR || path.join(os.homedir(), '.forge');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -165,7 +165,10 @@ export function saveModelsCache(cache: Partial<ModelsCache>): ModelsCache {
   const updated: ModelsCache = {
     ...existing,
     ...cache,
-    deadModels: Array.from(new Set([...existing.deadModels, ...(cache.deadModels || [])]))
+    deadModels:
+      cache.deadModels !== undefined
+        ? Array.from(new Set(cache.deadModels))
+        : existing.deadModels
   };
   fs.writeFileSync(getModelsCachePath(), JSON.stringify(updated, null, 2), 'utf8');
   return updated;

@@ -10,12 +10,20 @@ import { compactHistory } from '../src/agent/compact.js';
 
 describe('forge test suite', () => {
   let tempDir: string;
+  let originalForgeHome: string | undefined;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-test-'));
+    originalForgeHome = process.env.FORGE_HOME;
+    process.env.FORGE_HOME = path.join(tempDir, '.forge');
   });
 
   afterEach(() => {
+    if (originalForgeHome !== undefined) {
+      process.env.FORGE_HOME = originalForgeHome;
+    } else {
+      delete process.env.FORGE_HOME;
+    }
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
     } catch {
