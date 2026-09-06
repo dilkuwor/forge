@@ -8,11 +8,11 @@ import { ProviderClient, ChatOptions, ChatResponse } from '../src/providers/type
 import { AgentLoop } from '../src/agent/loop.js';
 import { compactHistory } from '../src/agent/compact.js';
 
-describe('routercode (rcd) test suite', () => {
+describe('forge test suite', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcd-test-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-test-'));
   });
 
   afterEach(() => {
@@ -338,7 +338,7 @@ describe('routercode (rcd) test suite', () => {
 
   it('compactHistory reduces token count while preserving context', () => {
     const messages: any[] = [
-      { role: 'system', content: 'You are routercode' },
+      { role: 'system', content: 'You are forge' },
       { role: 'user', content: 'Initial user task' }
     ];
 

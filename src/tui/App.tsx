@@ -143,10 +143,10 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean }> = ({
         `Current model: ${model} (${provider})`,
         '',
         'OpenRouter free/tool models:',
-        orModels.length > 0 ? orModels.map((m) => `  • ${m}`).join('\n') : '  (run rcd login openrouter to fetch)',
+        orModels.length > 0 ? orModels.map((m) => `  • ${m}`).join('\n') : '  (run forge login openrouter to fetch)',
         '',
         'NVIDIA NIM live models:',
-        nvModels.length > 0 ? nvModels.map((m) => `  • ${m}`).join('\n') : '  (run rcd login nvidia to fetch)',
+        nvModels.length > 0 ? nvModels.map((m) => `  • ${m}`).join('\n') : '  (run forge login nvidia to fetch)',
         '',
         'Dead models:',
         cache.deadModels.map((m) => `  x ${m}`).join('\n')

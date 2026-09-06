@@ -30,18 +30,18 @@ export const Header: React.FC<HeaderProps> = ({
         <Box flexDirection="column">
           <Box>
             <Text bold color="cyan">
-              █▀█ █▀█ █ █ ▀█▀ █▀▀ █▀█
+              █▀▀ █▀█ █▀█
             </Text>
             <Text bold color="magenta">
-              {'   '}█▀▀ █▀█ █▀▄ █▀▀
+              {' '}█▀▀ █▀▀
             </Text>
           </Box>
           <Box>
             <Text bold color="cyan">
-              █▀▄ █▄█ █▄█  █  ██▄ █▀▄
+              █▀  █▄█ █▀▄
             </Text>
             <Text bold color="magenta">
-              {'   '}█▄▄ █▄█ █▄▀ ██▄
+              {' '}█▄█ ██▄
             </Text>
           </Box>
         </Box>
@@ -49,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
         <Box flexDirection="column" alignItems="flex-end">
           <Box>
             <Text backgroundColor="cyan" color="black" bold>
-              {' rcd '}
+              {' forge '}
             </Text>
             <Text color="gray"> v0.1.0 </Text>
             <Text color="yellow">⚡</Text>

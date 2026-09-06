@@ -18,7 +18,7 @@ export class NvidiaProvider implements ProviderClient {
     const apiKey = getNvidiaKey();
     if (!apiKey) {
       throw new Error(
-        'NVIDIA API key not found. Set NVIDIA_API_KEY or run `rcd login nvidia`.'
+        'NVIDIA API key not found. Set NVIDIA_API_KEY or run `forge login nvidia`.'
       );
     }
 

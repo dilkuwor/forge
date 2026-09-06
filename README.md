@@ -1,26 +1,26 @@
 ```text
 ╭─────────────────────────────────────────────────────────────────────────╮
-│  █▀█ █▀█ █ █ ▀█▀ █▀▀ █▀█   █▀▀ █▀█ █▀▄ █▀▀           [ rcd ] v0.1.0 ⚡  │
-│  █▀▄ █▄█ █▄█  █  ██▄ █▀▄   █▄▄ █▄█ █▄▀ ██▄     Autonomous Coding Agent  │
+│  █▀▀ █▀█ █▀█ █▀▀ █▀▀                               [ forge ] v0.1.0 ⚡  │
+│  █▀  █▄█ █▀▄ █▄█ ██▄                           Autonomous Coding Agent  │
 ╰─────────────────────────────────────────────────────────────────────────╯
 ```
 
-# routercode (rcd)
+# forge
 
-A local, autonomous terminal coding agent. Run `rcd` inside any project folder, type your task, and the agent inspects the codebase, edits files with exact precision, executes bash commands, and iterates autonomously until the task is done.
+A local, autonomous terminal coding agent. Run `forge` inside any project folder, type your task, and the agent inspects the codebase, edits files with exact precision, executes bash commands, and iterates autonomously until the task is done.
 
 ## Quick Install
 
 Install the standalone binary directly via curl (no Node.js required):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dilkuwor/routercode/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dilkuwor/forge/main/install.sh | bash
 ```
 
 Then:
 1. **Restart your terminal** (or run `source ~/.zshrc` / `source ~/.bashrc`).
-2. Run `rcd login openrouter` or `rcd login nvidia` to store your API keys.
-3. Run `rcd` inside any project to launch the interactive terminal agent!
+2. Run `forge login openrouter` or `forge login nvidia` to store your API keys.
+3. Run `forge` inside any project to launch the interactive terminal agent!
 
 > **Note:**
 > - Node/npm is only needed for local development.
@@ -34,7 +34,7 @@ Then:
 ```mermaid
 flowchart TD
     subgraph ClientLayer ["1. Presentation and CLI Layer"]
-        CLI["CLI Entrypoint: rcd / rcd run<br/>src/cli.ts"]
+        CLI["CLI Entrypoint: forge / forge run<br/>src/cli.ts"]
         TUI["Interactive TUI: Ink + React<br/>src/tui/"]
         Headless["Headless Execution Engine<br/>src/cli.ts"]
         CLI -->|"interactive"| TUI
@@ -86,12 +86,12 @@ flowchart TD
         NVClient -->|"OpenAI SDK / HTTPS"| NvidiaAPI[("NVIDIA NIM API<br/>integrate.api.nvidia.com/v1")]
     end
 
-    subgraph StorageLayer ["5. Persistence and Local State ~/.rcd/"]
-        Config["Config: ~/.rcd/config.json"]
-        Auth["Auth Store: ~/.rcd/auth.json"]
-        ModelCache["Model Cache: ~/.rcd/models-cache.json"]
-        Sessions["JSONL Sessions: ~/.rcd/sessions/*.jsonl"]
-        ProjectMd["Project Overrides: ./.rcd/project.md"]
+    subgraph StorageLayer ["5. Persistence and Local State ~/.forge/"]
+        Config["Config: ~/.forge/config.json"]
+        Auth["Auth Store: ~/.forge/auth.json"]
+        ModelCache["Model Cache: ~/.forge/models-cache.json"]
+        Sessions["JSONL Sessions: ~/.forge/sessions/*.jsonl"]
+        ProjectMd["Project Overrides: ./.forge/project.md"]
 
         CLI -.-> Auth
         CLI -.-> Config
@@ -184,12 +184,12 @@ sequenceDiagram
 
 ### 1. Presentation & CLI Layer (`src/cli.ts` & `src/tui/`)
 - **CLI Dispatcher (`src/cli.ts`)**:
-  - Parses terminal arguments: `rcd`, `rcd run "<task>"`, `rcd login <provider>`, and `rcd models`.
-  - In headless mode (`rcd run`), runs the agent without TUI overhead, streaming tokens and tool status directly to `process.stdout`/`process.stderr`.
-  - Interactively requests API keys on `rcd login` and auto-refreshes model metadata.
+  - Parses terminal arguments: `forge`, `forge run "<task>"`, `forge login <provider>`, and `forge models`.
+  - In headless mode (`forge run`), runs the agent without TUI overhead, streaming tokens and tool status directly to `process.stdout`/`process.stderr`.
+  - Interactively requests API keys on `forge login` and auto-refreshes model metadata.
 - **Terminal User Interface (`src/tui/`)**:
   - Built with **Ink (React for terminal CLIs)**.
-  - **Header Component (`Header.tsx`)**: Displays the stylish ASCII block logo (`routercode [ rcd ]`), active model name, active provider, unique session ID, current project path, and auto-approve badge.
+  - **Header Component (`Header.tsx`)**: Displays the stylish ASCII block logo (`forge [ forge ]`), active model name, active provider, unique session ID, current project path, and auto-approve badge.
   - **Tool Cards (`ToolCard.tsx`)**: Visual cards rendering tool name, inputs (target file or command), execution state (running/done/error), and live output previews.
   - **Input & Keyboard Controls (`App.tsx`)**: Seamless input handling, slash command interception, interactive confirmation prompts (Y/N), and `Ctrl+C` interrupt handling (aborts running loops without terminating the process; exits if idle).
 
@@ -203,12 +203,12 @@ sequenceDiagram
 
 ### 3. Context & Prompt Assembly (`src/agent/context.ts`)
 - **Dynamic Repository Map**:
-  - Recursively scans the project workspace up to 4 directory levels deep, filtering out noise (`.git`, `node_modules`, `dist`, `.rcd`, `coverage`).
+  - Recursively scans the project workspace up to 4 directory levels deep, filtering out noise (`.git`, `node_modules`, `dist`, `.forge`, `coverage`).
   - Presents an up-to-date ASCII file tree to the model on every iteration.
 - **Session Touched Files**:
   - Tracks every file created or modified in the current session and reminds the model of files currently in flux.
-- **Project Overrides (`./.rcd/project.md`)**:
-  - If a local `./.rcd/project.md` file exists in the repository, its contents are injected into the system prompt to guide project-specific conventions, code standards, and workflows.
+- **Project Overrides (`./.forge/project.md`)**:
+  - If a local `./.forge/project.md` file exists in the repository, its contents are injected into the system prompt to guide project-specific conventions, code standards, and workflows.
 
 ### 4. History Compaction Engine (`src/agent/compact.ts`)
 - Uses token estimation to prevent context window overflow.
@@ -241,7 +241,7 @@ Only 8 core tools are available to prevent unexpected behavior:
 - Unified interface conforming to OpenAI SDK specifications: `chat({ model, messages, tools, stream })`.
 - **Router Policy (`router.ts`)**:
   1. Starts with user-selected or default model.
-  2. **404 / 410 Handling**: If a model returns 404 or 410, marks the model as dead in `~/.rcd/models-cache.json` and automatically transitions to the next fallback model.
+  2. **404 / 410 Handling**: If a model returns 404 or 410, marks the model as dead in `~/.forge/models-cache.json` and automatically transitions to the next fallback model.
   3. **429 Rate Limit Handling**: Applies exponential backoff and retries up to 2 times before switching to the next fallback.
   4. **Tool Compatibility Check**: If a model rejects tool calling parameters, skips to the next capable model.
 - **OpenRouter (`openrouter.ts`)**:
@@ -254,9 +254,9 @@ Only 8 core tools are available to prevent unexpected behavior:
   - Prioritizes live models: `nvidia/nemotron-3-super-120b-a12b`, `nvidia/nemotron-3-ultra-550b-a55b`, and `deepseek-ai/deepseek-v4-flash-0731`.
 
 ### 7. Storage & Auditing (`src/store/session.ts` & `src/config.ts`)
-- **Sessions Directory (`~/.rcd/sessions/<id>.jsonl`)**:
+- **Sessions Directory (`~/.forge/sessions/<id>.jsonl`)**:
   - Every interaction, tool invocation, shell output, and error is stored in append-only JSON Lines format for auditing, debugging, and review.
-- **Config & Auth (`~/.rcd/config.json`, `~/.rcd/auth.json`)**:
+- **Config & Auth (`~/.forge/config.json`, `~/.forge/auth.json`)**:
   - Stores user preferences, default models, fallback chains, confirmation toggles, and API keys with secure local filesystem permissions.
 
 ---
@@ -265,17 +265,17 @@ Only 8 core tools are available to prevent unexpected behavior:
 
 ### CLI Commands
 ```bash
-rcd                  # Start interactive TUI in current directory
-rcd -y               # Start TUI with Auto-Approve ON (no permission prompts)
-rcd run "task"       # One-shot headless execution without TUI
-rcd run "task" -y    # Run headless with Auto-Approve (no permission prompts)
-rcd login openrouter # Configure OpenRouter API key and cache free/tool models
-rcd login nvidia     # Configure NVIDIA NIM API key and cache live models
-rcd models           # Display active model, fallbacks, and cached model IDs
+forge                  # Start interactive TUI in current directory
+forge -y               # Start TUI with Auto-Approve ON (no permission prompts)
+forge run "task"       # One-shot headless execution without TUI
+forge run "task" -y    # Run headless with Auto-Approve (no permission prompts)
+forge login openrouter # Configure OpenRouter API key and cache free/tool models
+forge login nvidia     # Configure NVIDIA NIM API key and cache live models
+forge models           # Display active model, fallbacks, and cached model IDs
 ```
 
 ### TUI Slash Commands
-Type these commands into the prompt bar during an interactive `rcd` session:
+Type these commands into the prompt bar during an interactive `forge` session:
 - `/models` — Display active model, fallback sequence, and cached models.
 - `/provider [openrouter|nvidia]` — Show or switch active provider.
 - `/confirm [on|off]` — Toggle permission prompts / Auto-Approve on the fly.
@@ -288,7 +288,7 @@ Type these commands into the prompt bar during an interactive `rcd` session:
 
 ## Configuration Schema
 
-Default configuration stored in `~/.rcd/config.json`:
+Default configuration stored in `~/.forge/config.json`:
 
 ```json
 {
@@ -314,8 +314,8 @@ Node 22+ and npm are required only for local development:
 
 ```bash
 # Clone repository
-git clone https://github.com/dilkuwor/routercode.git
-cd routercode
+git clone https://github.com/dilkuwor/forge.git
+cd forge
 
 # Install dependencies
 npm install
@@ -327,7 +327,7 @@ npm run build
 npm test
 
 # Test local build directly
-npx rcd --help
+npx forge --help
 node dist/cli.js run "explain this codebase"
 ```
 
@@ -335,15 +335,15 @@ node dist/cli.js run "explain this codebase"
 
 ## Docker (Isolated Environment)
 
-`routercode` is available on **Docker Hub**: [**`dpksamir/routercode`**](https://hub.docker.com/r/dpksamir/routercode).
+`forge` is available on **Docker Hub**: [**`dpksamir/forge`**](https://hub.docker.com/r/dpksamir/forge).
 
-You can run `rcd` inside an isolated container without installing Node.js or modifying host system state. The Docker container mounts your current workspace at runtime and does not contain the user repository in the image.
+You can run `forge` inside an isolated container without installing Node.js or modifying host system state. The Docker container mounts your current workspace at runtime and does not contain the user repository in the image.
 
 ### Run with Docker Hub Image
 
 ```bash
 # Pull the latest image
-docker pull dpksamir/routercode:latest
+docker pull dpksamir/forge:latest
 
 # Run inside any project directory
 docker run --rm -it \
@@ -351,7 +351,7 @@ docker run --rm -it \
   -w /workspace \
   -e OPENROUTER_API_KEY \
   -e NVIDIA_API_KEY \
-  dpksamir/routercode
+  dpksamir/forge
 ```
 
 ### Build and Run Locally
@@ -360,7 +360,7 @@ Alternatively, you can build the image directly from the included `Dockerfile`:
 
 ```bash
 # Build local Docker image
-docker build -t rcd .
+docker build -t forge .
 
 # Run inside any workspace directory
 docker run --rm -it \
@@ -368,5 +368,5 @@ docker run --rm -it \
   -w /workspace \
   -e OPENROUTER_API_KEY \
   -e NVIDIA_API_KEY \
-  rcd
+  forge
 ```

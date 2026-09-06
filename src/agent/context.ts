@@ -61,7 +61,7 @@ export function buildSystemPrompt(projectRoot: string, touchedFiles: Set<string>
   const repoMap = buildRepoMap(projectRoot);
   const projectMd = getProjectMd(projectRoot);
 
-  let prompt = `You are routercode (rcd), an autonomous terminal coding agent.
+  let prompt = `You are forge, an autonomous terminal coding agent.
 Working directory: ${projectRoot}
 
 CORE RULES:
@@ -80,7 +80,7 @@ ${repoMap}
 `;
 
   if (projectMd) {
-    prompt += `\nPROJECT INSTRUCTIONS (.rcd/project.md):\n${projectMd}\n`;
+    prompt += `\nPROJECT INSTRUCTIONS (.forge/project.md):\n${projectMd}\n`;
   }
 
   if (touchedFiles.size > 0) {

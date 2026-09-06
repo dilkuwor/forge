@@ -23,13 +23,13 @@ jobs:
         include:
           - os: macos-14
             target: bun-darwin-arm64
-            binary_name: rcd-darwin-arm64
+            binary_name: forge-darwin-arm64
           - os: macos-14
             target: bun-darwin-x64
-            binary_name: rcd-darwin-x64
+            binary_name: forge-darwin-x64
           - os: ubuntu-latest
             target: bun-linux-x64
-            binary_name: rcd-linux-x64
+            binary_name: forge-linux-x64
 
     steps:
       - name: Checkout repository
@@ -73,7 +73,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag_name || 'v0.1.0' }}
           files: |
-            ./dist-binaries/rcd-darwin-arm64
-            ./dist-binaries/rcd-darwin-x64
-            ./dist-binaries/rcd-linux-x64
+            ./dist-binaries/forge-darwin-arm64
+            ./dist-binaries/forge-darwin-x64
+            ./dist-binaries/forge-linux-x64
           generate_release_notes: true

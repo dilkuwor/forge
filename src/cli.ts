@@ -45,10 +45,10 @@ async function handleLogin(provider: string, explicitKey?: string) {
 
   if (p === 'openrouter') {
     saveAuth({ openrouterApiKey: key });
-    console.log('Saved OpenRouter API key to ~/.rcd/auth.json');
+    console.log('Saved OpenRouter API key to ~/.forge/auth.json');
   } else {
     saveAuth({ nvidiaApiKey: key });
-    console.log('Saved NVIDIA API key to ~/.rcd/auth.json');
+    console.log('Saved NVIDIA API key to ~/.forge/auth.json');
   }
 
   console.log('Fetching live models...');
@@ -56,10 +56,10 @@ async function handleLogin(provider: string, explicitKey?: string) {
   try {
     if (p === 'openrouter') {
       const models = await router.openrouter.fetchModels();
-      console.log(`Cached ${models.length} free/tool OpenRouter models in ~/.rcd/models-cache.json`);
+      console.log(`Cached ${models.length} free/tool OpenRouter models in ~/.forge/models-cache.json`);
     } else {
       const models = await router.nvidia.fetchModels();
-      console.log(`Cached ${models.length} live NVIDIA NIM models in ~/.rcd/models-cache.json`);
+      console.log(`Cached ${models.length} live NVIDIA NIM models in ~/.forge/models-cache.json`);
     }
   } catch (err: any) {
     console.warn(`Warning: could not fetch models immediately (${err.message}). Cached defaults will be used.`);
@@ -74,14 +74,14 @@ async function handleModelsCommand() {
   await router.initBootCache().catch(() => {});
 
   const cache = loadModelsCache();
-  console.log('\n=== routercode (rcd) Models ===\n');
+  console.log('\n=== forge Models ===\n');
   console.log(`Default Provider: ${config.defaultProvider}`);
   console.log(`Default Model:    ${config.defaultModel}`);
   console.log(`Fallback Models:  ${config.fallbackModels.join(' -> ')}\n`);
 
   console.log('OpenRouter (Free / Tool Supported):');
   if (cache.openrouter.length === 0) {
-    console.log('  (no cached models - run `rcd login openrouter` to refresh)');
+    console.log('  (no cached models - run `forge login openrouter` to refresh)');
   } else {
     for (const m of cache.openrouter) {
       console.log(`  • ${m.id} ${m.name && m.name !== m.id ? `(${m.name})` : ''}`);
@@ -90,7 +90,7 @@ async function handleModelsCommand() {
 
   console.log('\nNVIDIA NIM (Live Models):');
   if (cache.nvidia.length === 0) {
-    console.log('  (no cached models - run `rcd login nvidia` to refresh)');
+    console.log('  (no cached models - run `forge login nvidia` to refresh)');
   } else {
     for (const m of cache.nvidia) {
       console.log(`  • ${m.id}`);
@@ -109,7 +109,7 @@ async function handleModelsCommand() {
 async function handleTodoCommand(subArgs: string[]) {
   const subCommand = subArgs[0];
   if (!subCommand) {
-    console.log('Usage: rcd todo <add|list|remove|toggle> [args]');
+    console.log('Usage: forge todo <add|list|remove|toggle> [args]');
     return;
   }
 
@@ -117,7 +117,7 @@ async function handleTodoCommand(subArgs: string[]) {
     case 'add': {
       const text = subArgs.slice(1).join(' ');
       if (!text) {
-        console.log('Error: todo text required. Example: rcd todo add "buy milk"');
+        console.log('Error: todo text required. Example: forge todo add "buy milk"');
         return;
       }
       const todo = todoStore.add(text);
@@ -140,7 +140,7 @@ async function handleTodoCommand(subArgs: string[]) {
       const idStr = subArgs[1];
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.log('Error: valid todo id required. Example: rcd todo remove 1');
+        console.log('Error: valid todo id required. Example: forge todo remove 1');
         return;
       }
       const removed = todoStore.remove(id);
@@ -155,7 +155,7 @@ async function handleTodoCommand(subArgs: string[]) {
       const idStr = subArgs[1];
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.log('Error: valid todo id required. Example: rcd todo toggle 1');
+        console.log('Error: valid todo id required. Example: forge todo toggle 1');
         return;
       }
       const todo = todoStore.toggleDone(id);
@@ -174,7 +174,7 @@ async function handleTodoCommand(subArgs: string[]) {
 
 async function handleRunCommand(task: string, options?: { noConfirm?: boolean }) {
   if (!task || !task.trim()) {
-    console.error('Error: task argument required. Example: rcd run "what does this repo do?"');
+    console.error('Error: task argument required. Example: forge run "what does this repo do?"');
     process.exit(1);
   }
 
@@ -247,16 +247,16 @@ async function handleRunCommand(task: string, options?: { noConfirm?: boolean })
 
 function printHelp() {
   console.log(`
-routercode (rcd) - Terminal coding agent
+forge - Terminal coding agent
 
 USAGE:
-  rcd [-y]                Start interactive TUI (-y for auto-approve / no-confirm)
-  rcd run "<task>" [-y]   Run a task headless without TUI (-y for auto-approve)
-  rcd login openrouter    Set OpenRouter API key and cache free/tool models
-  rcd login nvidia        Set NVIDIA NIM API key and cache live models
-  rcd models              List available/cached models and fallbacks
-  rcd todo                Manage in-memory todo list
-  rcd --help              Show this help message
+  forge [-y]                Start interactive TUI (-y for auto-approve / no-confirm)
+  forge run "<task>" [-y]   Run a task headless without TUI (-y for auto-approve)
+  forge login openrouter    Set OpenRouter API key and cache free/tool models
+  forge login nvidia        Set NVIDIA NIM API key and cache live models
+  forge models              List available/cached models and fallbacks
+  forge todo                Manage in-memory todo list
+  forge --help              Show this help message
 
 TUI SLASH COMMANDS:
   /models                 List cached models
@@ -295,7 +295,7 @@ export async function main() {
     const provider = args[1];
     const key = args[2];
     if (!provider) {
-      console.error('Usage: rcd login <openrouter|nvidia> [apiKey]');
+      console.error('Usage: forge login <openrouter|nvidia> [apiKey]');
       process.exit(1);
     }
     await handleLogin(provider, key);
@@ -318,7 +318,7 @@ export async function main() {
   }
 
   if (command === '--version' || command === '-v') {
-    console.log('routercode (rcd) v0.1.0');
+    console.log('forge v0.1.0');
     return;
   }
 
@@ -328,7 +328,7 @@ export async function main() {
     printHelp();
     process.exit(1);
   } else {
-    // Convenience: `rcd "what does this repo do?"` launches TUI with initial prompt
+    // Convenience: `forge "what does this repo do?"` launches TUI with initial prompt
     await startTUI({ initialPrompt: args.join(' '), noConfirm });
   }
 }

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-export interface RcdConfig {
+export interface ForgeConfig {
   defaultProvider: 'openrouter' | 'nvidia';
   defaultModel: string;
   fallbackModels: string[];
@@ -37,7 +37,7 @@ export interface ModelsCache {
   deadModels: string[];
 }
 
-export const DEFAULT_CONFIG: RcdConfig = {
+export const DEFAULT_CONFIG: ForgeConfig = {
   defaultProvider: 'openrouter',
   defaultModel: 'openrouter/free',
   fallbackModels: [
@@ -51,8 +51,8 @@ export const DEFAULT_CONFIG: RcdConfig = {
   }
 };
 
-export function getRcdDir(): string {
-  const dir = path.join(os.homedir(), '.rcd');
+export function getForgeDir(): string {
+  const dir = path.join(os.homedir(), '.forge');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -60,7 +60,7 @@ export function getRcdDir(): string {
 }
 
 export function getSessionsDir(): string {
-  const dir = path.join(getRcdDir(), 'sessions');
+  const dir = path.join(getForgeDir(), 'sessions');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -68,18 +68,18 @@ export function getSessionsDir(): string {
 }
 
 export function getConfigPath(): string {
-  return path.join(getRcdDir(), 'config.json');
+  return path.join(getForgeDir(), 'config.json');
 }
 
 export function getAuthPath(): string {
-  return path.join(getRcdDir(), 'auth.json');
+  return path.join(getForgeDir(), 'auth.json');
 }
 
 export function getModelsCachePath(): string {
-  return path.join(getRcdDir(), 'models-cache.json');
+  return path.join(getForgeDir(), 'models-cache.json');
 }
 
-export function loadConfig(): RcdConfig {
+export function loadConfig(): ForgeConfig {
   const configPath = getConfigPath();
   try {
     if (fs.existsSync(configPath)) {
@@ -100,9 +100,9 @@ export function loadConfig(): RcdConfig {
   return { ...DEFAULT_CONFIG };
 }
 
-export function saveConfig(config: Partial<RcdConfig>): RcdConfig {
+export function saveConfig(config: Partial<ForgeConfig>): ForgeConfig {
   const existing = loadConfig();
-  const updated: RcdConfig = {
+  const updated: ForgeConfig = {
     ...existing,
     ...config,
     confirm: {
@@ -172,7 +172,7 @@ export function saveModelsCache(cache: Partial<ModelsCache>): ModelsCache {
 }
 
 export function getProjectMd(cwd: string = process.cwd()): string | null {
-  const projPath = path.join(cwd, '.rcd', 'project.md');
+  const projPath = path.join(cwd, '.forge', 'project.md');
   if (fs.existsSync(projPath)) {
     try {
       return fs.readFileSync(projPath, 'utf8');

@@ -1,10 +1,10 @@
 {
-  "name": "routercode",
+  "name": "forge",
   "version": "0.1.0",
   "description": "A terminal coding agent",
   "type": "module",
   "bin": {
-    "rcd": "./dist/cli.js"
+    "forge": "./dist/cli.js"
   },
   "main": "./dist/cli.js",
   "scripts": {

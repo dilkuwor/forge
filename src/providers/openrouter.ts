@@ -10,7 +10,7 @@ export class OpenRouterProvider implements ProviderClient {
     const apiKey = getOpenRouterKey();
     if (!apiKey) {
       throw new Error(
-        'OpenRouter API key not found. Set OPENROUTER_API_KEY or run `rcd login openrouter`.'
+        'OpenRouter API key not found. Set OPENROUTER_API_KEY or run `forge login openrouter`.'
       );
     }
 
@@ -19,8 +19,8 @@ export class OpenRouterProvider implements ProviderClient {
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey,
         defaultHeaders: {
-          'HTTP-Referer': 'https://github.com/dilkuwor/routercode',
-          'X-Title': 'routercode'
+          'HTTP-Referer': 'https://github.com/dilkuwor/forge',
+          'X-Title': 'forge'
         }
       });
     }
