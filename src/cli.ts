@@ -13,7 +13,6 @@ import { ModelRouter } from './providers/router.js';
 import { startTUI } from './tui/index.js';
 import { todoStore } from './todo.js';
 import { runSetup, runSetupIfNeeded } from './setup.js';
-import { UIClient } from './ui-client.js';
 
 function askQuestion(query: string): Promise<string> {
   const rl = readline.createInterface({
@@ -198,34 +197,15 @@ async function handleRunCommand(task: string, options?: { noConfirm?: boolean })
 
   const isInteractive = process.stdin.isTTY && !options?.noConfirm;
 
-  const uiClient = new UIClient({
-    sessionId: loop.session.id,
-    workspace: process.cwd(),
-    model: config.defaultModel,
-    provider: config.defaultProvider
-  });
-  await uiClient.connect().catch(() => {});
-  uiClient.update({
-    status: 'WORKING',
-    currentTask: task,
-    currentOperation: 'Starting task...',
-    step: 1
-  });
-
   const onConfirm = async (prompt: { type: 'file' | 'bash'; target: string }): Promise<boolean> => {
     if (!isInteractive) {
       // If headless non-interactive or auto-approved
       return true;
     }
-    uiClient.update({
-      status: 'AWAITING_APPROVAL',
-      currentOperation: `Confirm ${prompt.type}: ${prompt.target}`
-    });
     const ans = await askQuestion(
       `\n[Confirm] Allow ${prompt.type === 'file' ? 'edit/write to' : 'bash command'}: "${prompt.target}"? (y/n): `
     );
     const approved = ans.toLowerCase() === 'y' || ans.toLowerCase() === 'yes';
-    uiClient.update({ status: 'WORKING' });
     return approved;
   };
 
@@ -236,13 +216,6 @@ async function handleRunCommand(task: string, options?: { noConfirm?: boolean })
       onEvent: (event) => {
         if (event.type === 'text') {
           process.stdout.write(event.text);
-          uiClient.sendTerminalChunk(event.text);
-        } else if (event.type === 'step_start') {
-          uiClient.update({
-            step: event.step,
-            maxSteps: event.maxSteps,
-            currentOperation: `Step ${event.step}/${event.maxSteps}: Contacting model...`
-          });
         } else if (event.type === 'tool_call_start') {
           const detail =
             event.args.path ||
@@ -250,47 +223,27 @@ async function handleRunCommand(task: string, options?: { noConfirm?: boolean })
             event.args.pattern ||
             (event.args.items ? `${event.args.items.length} items` : '');
           console.log(`\n\x1b[36m⚙ [tool: ${event.name}]\x1b[0m ${detail}`);
-          uiClient.update({ currentOperation: `Running tool: ${event.name}` });
-          uiClient.sendActivity(`Tool Call: ${event.name}`, 'shell', detail);
         } else if (event.type === 'tool_call_result') {
           const summary =
             event.result.length > 250
               ? event.result.slice(0, 250) + '\n... (truncated)'
               : event.result;
           console.log(`\x1b[90m${summary}\x1b[0m\n`);
-          uiClient.update({
-            currentOperation: event.error ? `Tool failed: ${event.name}` : `Tool completed: ${event.name}`
-          });
-          } else if (event.type === 'compact') {
+        } else if (event.type === 'compact') {
           console.log(
             `\x1b[33m⚡ Context compacted (${event.tokensBefore} -> ${event.tokensAfter} tokens)\x1b[0m`
           );
-          uiClient.sendActivity(
-            `Context compacted (${event.tokensBefore} -> ${event.tokensAfter} tokens)`,
-            'compact'
-          );
-        } else if (event.type === 'token_usage') {
-          uiClient.update({
-            tokenUsage: event.tokenUsage,
-            compactions: event.compactions
-          });
         } else if (event.type === 'status') {
           console.log(`\x1b[35mℹ ${event.message}\x1b[0m`);
-          uiClient.update({ currentOperation: event.message });
         } else if (event.type === 'error') {
           console.error(`\x1b[31m✖ Error: ${event.error.message}\x1b[0m`);
-          uiClient.update({ status: 'ERROR', currentOperation: event.error.message });
         }
       }
     });
     console.log('');
-    uiClient.update({ status: 'COMPLETED', currentOperation: 'Finished' });
   } catch (err: any) {
     console.error(`\x1b[31mFatal error: ${err.message}\x1b[0m`);
-    uiClient.update({ status: 'ERROR', currentOperation: err.message });
     process.exit(1);
-  } finally {
-    await uiClient.unregister().catch(() => {});
   }
 }
 
@@ -299,16 +252,15 @@ function printHelp() {
 forge - Terminal coding agent
 
 USAGE:
-  forge [--ui] [-y]         Start interactive TUI (--ui to also launch web UI)
-  forge run "<task>" [--ui] Run a task headless without TUI (-y for auto-approve)
-  forge setup               Interactive setup / configure AI provider and model
-  forge login openrouter    Set OpenRouter API key and cache free/tool models
-  forge login nvidia        Set NVIDIA NIM API key and cache live models
-  forge models              List available/cached models and fallbacks
-  forge todo                Manage in-memory todo list
-  forge ui [port]           Start localhost web UI (default: http://127.0.0.1:4317)
-  forge uninstall [--purge] Safely uninstall Forge CLI and configuration (-y to skip prompt)
-  forge --help              Show this help message
+  forge [-y]                 Start interactive TUI (-y for auto-approve)
+  forge run "<task>" [-y]    Run a task headless without TUI (-y for auto-approve)
+  forge setup                Interactive setup / configure AI provider and model
+  forge login openrouter     Set OpenRouter API key and cache free/tool models
+  forge login nvidia         Set NVIDIA NIM API key and cache live models
+  forge models               List available/cached models and fallbacks
+  forge todo                 Manage in-memory todo list
+  forge uninstall [--purge]  Safely uninstall Forge CLI and configuration (-y to skip prompt)
+  forge --help               Show this help message
 
 TUI SLASH COMMANDS:
   /models                 List cached models
@@ -327,67 +279,23 @@ export async function main() {
   const noConfirm = rawArgs.some(
     (a) => a === '-y' || a === '--y' || a === '--yes' || a === '--no-confirm' || a === '--auto-approve'
   );
-  const withUi = rawArgs.some((a) => a === '--ui' || a === '--with-ui');
   const args = rawArgs.filter(
     (a) =>
       a !== '-y' &&
       a !== '--y' &&
       a !== '--yes' &&
       a !== '--no-confirm' &&
-      a !== '--auto-approve' &&
-      a !== '--ui' &&
-      a !== '--with-ui'
+      a !== '--auto-approve'
   );
   const command = args[0];
-
-  let uiServerInstance: any = null;
-  const launchUiIfRequested = async () => {
-    if (withUi) {
-      const { startServer } = await import('../ui-server/src/server.js');
-      uiServerInstance = await startServer({ autoApprove: noConfirm, openBrowser: true });
-    }
-  };
 
   if (command === 'setup') {
     await runSetup();
     return;
   }
 
-  if (!command || command === 'start') {
-    await runSetupIfNeeded({ isHeadless: !process.stdin.isTTY });
-    await launchUiIfRequested();
-    try {
-      await startTUI({ noConfirm, uiUrl: uiServerInstance?.url });
-    } finally {
-      if (uiServerInstance) {
-        await uiServerInstance.close();
-      }
-    }
-    return;
-  }
-
-  if (command === 'run') {
-    const task = args.slice(1).join(' ');
-    await runSetupIfNeeded({ isHeadless: true });
-    await launchUiIfRequested();
-    try {
-      await handleRunCommand(task, { noConfirm });
-    } finally {
-      if (uiServerInstance) {
-        await uiServerInstance.close();
-      }
-    }
-    return;
-  }
-
   if (command === 'login') {
-    const provider = args[1];
-    const key = args[2];
-    if (!provider) {
-      console.error('Usage: forge login <openrouter|nvidia> [apiKey]');
-      process.exit(1);
-    }
-    await handleLogin(provider, key);
+    await handleLoginCommand(args[1]);
     return;
   }
 
@@ -401,32 +309,16 @@ export async function main() {
     return;
   }
 
-  if (command === 'ui') {
-    const portArg = args[1] && !isNaN(parseInt(args[1], 10)) ? parseInt(args[1], 10) : undefined;
-    const initialPrompt =
-      args[1] && isNaN(parseInt(args[1], 10)) ? args.slice(1).join(' ') : args.slice(2).join(' ');
-    const isHeadless =
-      rawArgs.includes('--headless') || rawArgs.includes('--server-only') || !process.stdin.isTTY;
+  if (!command || command === 'start') {
+    await runSetupIfNeeded({ isHeadless: !process.stdin.isTTY });
+    await startTUI({ noConfirm });
+    return;
+  }
 
-    // Use same first-run setup logic before starting UI or TUI
-    await runSetupIfNeeded({ isHeadless });
-
-    const { startServer } = await import('../ui-server/src/server.js');
-    const serverInstance = await startServer({ port: portArg, autoApprove: noConfirm, openBrowser: true });
-
-    if (isHeadless) {
-      return;
-    }
-
-    try {
-      await startTUI({
-        initialPrompt: initialPrompt || undefined,
-        noConfirm,
-        uiUrl: serverInstance.url
-      });
-    } finally {
-      await serverInstance.close();
-    }
+  if (command === 'run') {
+    const task = args.slice(1).join(' ');
+    await runSetupIfNeeded({ isHeadless: true });
+    await handleRunCommand(task, { noConfirm });
     return;
   }
 
@@ -456,14 +348,7 @@ export async function main() {
   } else {
     // Convenience: `forge "what does this repo do?"` launches TUI with initial prompt
     await runSetupIfNeeded({ isHeadless: !process.stdin.isTTY });
-    await launchUiIfRequested();
-    try {
-      await startTUI({ initialPrompt: args.join(' '), noConfirm, uiUrl: uiServerInstance?.url });
-    } finally {
-      if (uiServerInstance) {
-        await uiServerInstance.close();
-      }
-    }
+    await startTUI({ initialPrompt: args.join(' '), noConfirm });
   }
 }
 

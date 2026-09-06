@@ -7,7 +7,6 @@ export interface HeaderProps {
   sessionId: string;
   cwd: string;
   autoApprove?: boolean;
-  uiUrl?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,8 +14,7 @@ export const Header: React.FC<HeaderProps> = ({
   provider,
   sessionId,
   cwd,
-  autoApprove,
-  uiUrl
+  autoApprove
 }) => {
   return (
     <Box
@@ -98,15 +96,6 @@ export const Header: React.FC<HeaderProps> = ({
           {cwd}
         </Text>
       </Box>
-
-      {uiUrl && (
-        <Box marginTop={0}>
-          <Text color="cyan" bold>Forge UI running at: </Text>
-          <Text color="green" underline bold>
-            {uiUrl}
-          </Text>
-        </Box>
-      )}
     </Box>
   );
 };

@@ -288,9 +288,9 @@ describe('Forge First-Run Setup & Configuration Suite', () => {
     expect(launchMock).toHaveBeenCalled();
   });
 
-  // --- 7. forge ui Setup Behavior ---
+  // --- 7. Interactive Launch Setup Behavior ---
 
-  it('7. forge ui triggers first-run setup when unconfigured, then starts server & TUI', async () => {
+  it('7. interactive launch triggers first-run setup when unconfigured, then proceeds to TUI', async () => {
     let setupRunCount = 0;
     const validateKeyFn = vi.fn().mockResolvedValue({ valid: true });
     const fetchModelsFn = vi.fn().mockResolvedValue(['openrouter/free']);

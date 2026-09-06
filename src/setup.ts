@@ -568,11 +568,11 @@ export async function runSetup(options?: SetupOptions): Promise<void> {
 
   console.log(`\nSelected default model: \x1b[32m${selectedModel}\x1b[0m`);
 
-  // Build fallback sequence
+  // Build fallback sequence matching the selected provider
   const fallbackModels =
     selectedProvider === 'openrouter'
-      ? ['openai/gpt-oss-120b:free', 'nvidia/nemotron-3-super-120b-a12b']
-      : ['nvidia/nemotron-3-ultra-550b-a55b', 'openrouter/free'];
+      ? ['openrouter/free', 'inclusionai/ling-3.0-flash-sante:free']
+      : ['nvidia/nemotron-3-super-120b-a12b', 'nvidia/nemotron-3-ultra-550b-a55b'];
 
   // Save configuration
   saveSetupConfig(

@@ -9,9 +9,6 @@
   "main": "./dist/cli.js",
   "scripts": {
     "build": "tsup",
-    "build:web": "npm --prefix web run build",
-    "build:all": "npm --prefix web run build && tsup",
-    "ui": "node ./dist/cli.js ui",
     "start": "node ./dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -31,13 +28,11 @@
     "ink-text-input": "^6.0.0",
     "openai": "^7.10.0",
     "react": "^19.2.8",
-    "react-devtools-core": "^7.0.1",
-    "ws": "^8.21.3"
+    "react-devtools-core": "^7.0.1"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",
-    "@types/ws": "^8.18.1",
     "tsup": "^8.5.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"

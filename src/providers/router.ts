@@ -19,10 +19,14 @@ export class ModelRouter {
   public openrouter: ProviderClient;
   public nvidia: ProviderClient;
   private deadModels: Set<string>;
+  private isCustomOpenRouter: boolean;
+  private isCustomNvidia: boolean;
 
   constructor(options?: ModelRouterOptions) {
     this.openrouter = options?.openrouter || new OpenRouterProvider();
     this.nvidia = options?.nvidia || new NvidiaProvider();
+    this.isCustomOpenRouter = Boolean(options?.openrouter);
+    this.isCustomNvidia = Boolean(options?.nvidia);
     if (options?.deadModels) {
       this.deadModels = new Set(options.deadModels);
     } else {
@@ -147,8 +151,8 @@ export class ModelRouter {
     const hasRunnable = candidateModels.some((m) => !this.deadModels.has(m));
     if (!hasRunnable) {
       const dynamicFallbacks: string[] = [];
-      const hasNvidiaKey = Boolean(getNvidiaKey());
-      const hasOpenRouterKey = Boolean(getOpenRouterKey());
+      const hasNvidiaKey = Boolean(getNvidiaKey()) || this.isCustomNvidia;
+      const hasOpenRouterKey = Boolean(getOpenRouterKey()) || this.isCustomOpenRouter;
       const cache = loadModelsCache();
 
       if (hasNvidiaKey) {
@@ -193,6 +197,14 @@ export class ModelRouter {
       }
 
       const provider = this.resolveProviderForModel(model);
+
+      // Skip candidate if user has no credentials configured for its provider
+      if (provider.name === 'openrouter' && !this.isCustomOpenRouter && !Boolean(getOpenRouterKey())) {
+        continue;
+      }
+      if (provider.name === 'nvidia' && !this.isCustomNvidia && !Boolean(getNvidiaKey())) {
+        continue;
+      }
 
       // Retry up to 2 times on 429
       let retries = 2;
