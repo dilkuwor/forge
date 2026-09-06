@@ -47,6 +47,8 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const loopRef = useRef<AgentLoop>(new AgentLoop());
+  const currentStepRef = useRef<number>(1);
+  const maxStepsRef = useRef<number>(config.maxSteps || 30);
 
   const cwd = process.cwd();
   const sessionId = loopRef.current.session.id;
@@ -236,11 +238,16 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
         onEvent: (event) => {
           if (event.type === 'text') {
             setStreamingText((prev) => prev + event.text);
+            setStatusText(`Step ${currentStepRef.current} of ${maxStepsRef.current} · Streaming response...`);
           } else if (event.type === 'thinking') {
             setStreamingThinking((prev) => prev + event.text);
+            setStatusText(`Step ${currentStepRef.current} of ${maxStepsRef.current} · Thinking...`);
           } else if (event.type === 'step_start') {
-            setStatusText(`Step ${event.step} of ${event.maxSteps}`);
+            currentStepRef.current = event.step;
+            maxStepsRef.current = event.maxSteps;
+            setStatusText(`Step ${event.step} of ${event.maxSteps} · Contacting model...`);
           } else if (event.type === 'tool_call_start') {
+            setStatusText(`Step ${currentStepRef.current} of ${maxStepsRef.current} · Running tool: ${event.name}`);
             setActiveTools((prev) => [
               ...prev,
               {
@@ -251,6 +258,11 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
               }
             ]);
           } else if (event.type === 'tool_call_result') {
+            setStatusText(
+              `Step ${currentStepRef.current} of ${maxStepsRef.current} · ${
+                event.error ? 'Tool failed' : 'Tool completed'
+              } (${event.name})`
+            );
             setActiveTools((prev) =>
               prev.map((t) =>
                 t.id === event.id
