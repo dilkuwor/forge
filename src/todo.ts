@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { getForgeDir } from './config.js';
+
 export interface Todo {
   id: number;
   text: string;
@@ -5,37 +9,71 @@ export interface Todo {
 }
 
 class TodoStore {
-  private todos: Todo[] = [];
-  private nextId: number = 1;
+  private getFilePath(): string {
+    return path.join(getForgeDir(), 'todos.json');
+  }
+
+  private load(): { todos: Todo[]; nextId: number } {
+    try {
+      const file = this.getFilePath();
+      if (fs.existsSync(file)) {
+        const raw = fs.readFileSync(file, 'utf8');
+        const data = JSON.parse(raw);
+        if (Array.isArray(data.todos)) {
+          return {
+            todos: data.todos,
+            nextId:
+              typeof data.nextId === 'number'
+                ? data.nextId
+                : Math.max(0, ...data.todos.map((t: Todo) => t.id)) + 1
+          };
+        }
+      }
+    } catch {}
+    return { todos: [], nextId: 1 };
+  }
+
+  private save(todos: Todo[], nextId: number): void {
+    try {
+      const file = this.getFilePath();
+      fs.writeFileSync(file, JSON.stringify({ todos, nextId }, null, 2), 'utf8');
+    } catch {}
+  }
 
   add(text: string): Todo {
+    const { todos, nextId } = this.load();
     const todo: Todo = {
-      id: this.nextId++,
+      id: nextId,
       text,
-      done: false,
+      done: false
     };
-    this.todos.push(todo);
+    todos.push(todo);
+    this.save(todos, nextId + 1);
     return todo;
   }
 
   list(): Todo[] {
-    return [...this.todos];
+    return this.load().todos;
   }
 
   remove(id: number): boolean {
-    const index = this.todos.findIndex(t => t.id === id);
+    const { todos, nextId } = this.load();
+    const index = todos.findIndex((t) => t.id === id);
     if (index === -1) return false;
-    this.todos.splice(index, 1);
+    todos.splice(index, 1);
+    this.save(todos, nextId);
     return true;
   }
 
   toggleDone(id: number): Todo | null {
-    const todo = this.todos.find(t => t.id === id);
+    const { todos, nextId } = this.load();
+    const todo = todos.find((t) => t.id === id);
     if (!todo) return null;
     todo.done = !todo.done;
+    this.save(todos, nextId);
     return todo;
   }
 }
 
-// Export a singleton instance for simplicity
+// Export a singleton instance
 export const todoStore = new TodoStore();

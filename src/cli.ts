@@ -27,7 +27,11 @@ function askQuestion(query: string): Promise<string> {
   });
 }
 
-async function handleLogin(provider: string, explicitKey?: string) {
+async function handleLoginCommand(provider?: string, explicitKey?: string) {
+  if (!provider) {
+    console.log('Usage: forge login <openrouter|nvidia> [api-key]');
+    return;
+  }
   const p = provider.toLowerCase();
   if (p !== 'openrouter' && p !== 'nvidia') {
     console.error(`Unknown provider "${provider}". Supported: openrouter, nvidia`);
@@ -295,7 +299,7 @@ export async function main() {
   }
 
   if (command === 'login') {
-    await handleLoginCommand(args[1]);
+    await handleLoginCommand(args[1], args[2]);
     return;
   }
 
