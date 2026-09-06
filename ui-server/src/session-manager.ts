@@ -119,8 +119,8 @@ export class SessionManager extends EventEmitter {
 
     this.sessions.set(req.sessionId, internal);
 
-    // If no selected session or only host default, select this one
-    if (!this.selectedSessionId || this.sessions.size === 1) {
+    // If no selected session or currently selected is host placeholder, select this session
+    if (!this.selectedSessionId || this.sessions.size === 1 || this.selectedSessionId.startsWith('session-host-')) {
       this.selectedSessionId = req.sessionId;
     }
 
@@ -235,9 +235,13 @@ export class SessionManager extends EventEmitter {
     return this.selectedSessionId;
   }
 
-  public getActiveSessions(): ActiveSessionInfo[] {
+  public getActiveSessions(): (ActiveSessionInfo & { id: string })[] {
     this.pruneDeadSessions();
-    return Array.from(this.sessions.values()).map((s) => s.info);
+    return Array.from(this.sessions.values()).map((s) => ({
+      ...s.info,
+      id: s.info.sessionId,
+      isSelected: s.info.sessionId === this.selectedSessionId
+    }));
   }
 
   private pruneDeadSessions() {
@@ -246,13 +250,15 @@ export class SessionManager extends EventEmitter {
       if (s.info.isHost) continue; // Keep host session alive
       // If inactive for > 60 seconds
       if (now - s.info.lastHeartbeat > 60000) {
-        try {
-          if (s.info.pid) {
+        if (s.info.pid) {
+          try {
             process.kill(s.info.pid, 0); // Check if process exists
+          } catch (err: any) {
+            if (err.code === 'ESRCH') {
+              // Process no longer exists, prune it
+              this.unregisterSession(id);
+            }
           }
-        } catch {
-          // Process no longer exists, prune it
-          this.unregisterSession(id);
         }
       }
     }

@@ -281,6 +281,7 @@ forge uninstall -y     # Skip interactive confirmation prompt
 ### TUI Slash Commands
 Type these commands into the prompt bar during an interactive `forge` session:
 - `/models` — Display active model, fallback sequence, and cached models.
+- `/model <model-name>` — Switch the active default model on the fly.
 - `/provider [openrouter|nvidia]` — Show or switch active provider.
 - `/confirm [on|off]` — Toggle permission prompts / Auto-Approve on the fly.
 - `/new` — Reset the session, clear working memory, and generate a new session ID.

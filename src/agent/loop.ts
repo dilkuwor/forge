@@ -78,7 +78,18 @@ export class AgentLoop {
     return this.touchedFiles;
   }
 
+  public getModel(): string {
+    return this.currentModel;
+  }
+
+  public setModel(model: string): void {
+    this.currentModel = model;
+  }
+
   public async run(prompt: string, options?: Partial<AgentLoopOptions>): Promise<string> {
+    if (options?.model) {
+      this.currentModel = options.model;
+    }
     const config = loadConfig();
     const confirmConfig = options?.confirmConfig || this.defaultConfirmConfig || config.confirm;
     const onConfirm = options?.onConfirm || this.defaultOnConfirm;

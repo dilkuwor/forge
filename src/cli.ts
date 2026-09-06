@@ -307,6 +307,7 @@ USAGE:
 
 TUI SLASH COMMANDS:
   /models                 List cached models
+  /model <name>           Switch active model
   /provider               Switch or view provider (/provider openrouter|nvidia)
   /confirm [on|off]       Toggle auto-approve / permission prompts in current session
   /new                    Start a new session

@@ -83,11 +83,18 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
         {/* 1. Active Terminal Sessions */}
         <div className="forge-card" style={{ padding: '14px' }}>
-          <div className="card-title" style={{ marginBottom: '10px' }}>
-            <span>Active Terminals</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--cyan)', fontWeight: 600 }}>
-              {activeSessions.length} live
-            </span>
+          <div className="card-title" style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Active Terminals ({activeSessions.length} live)</span>
+            <button
+              className="btn btn-sm"
+              style={{ fontSize: '0.75rem', padding: '2px 8px' }}
+              onClick={() => {
+                loadActive();
+                loadSessions();
+              }}
+            >
+              🔄 Refresh
+            </button>
           </div>
 
           {activeSessions.length === 0 ? (

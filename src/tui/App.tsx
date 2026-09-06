@@ -193,6 +193,41 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
       return;
     }
 
+    if (main === '/model') {
+      if (arg) {
+        const prov = arg.startsWith('nvidia/')
+          ? 'nvidia'
+          : arg.includes('/')
+          ? 'openrouter'
+          : (provider as 'openrouter' | 'nvidia');
+        saveConfig({ defaultModel: arg, defaultProvider: prov });
+        setModel(arg);
+        loopRef.current.setModel(arg);
+        if (prov !== provider) {
+          setProvider(prov);
+        }
+        uiClientRef.current?.update({ model: arg, provider: prov });
+        setHistory((prev) => [
+          ...prev,
+          {
+            id: String(Date.now()),
+            type: 'system',
+            content: `Model switched to ${arg} (${prov}).`
+          }
+        ]);
+      } else {
+        setHistory((prev) => [
+          ...prev,
+          {
+            id: String(Date.now()),
+            type: 'system',
+            content: `Current model: ${model} (${provider}). Usage: /model <model-name> (type /models to see available)`
+          }
+        ]);
+      }
+      return;
+    }
+
     if (main === '/provider') {
       if (arg === 'openrouter' || arg === 'nvidia') {
         saveConfig({ defaultProvider: arg });
@@ -261,7 +296,7 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
       {
         id: String(Date.now()),
         type: 'system',
-        content: `Unknown slash command: ${main}. Available: /models, /provider, /confirm, /new, /compact, /diff, /stop`
+        content: `Unknown slash command: ${main}. Available: /models, /model, /provider, /confirm, /new, /compact, /diff, /stop`
       }
     ]);
   };
@@ -546,9 +581,9 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
           Status: <Text color={status === 'running' ? 'yellow' : 'cyan'}>{statusText}</Text>
         </Text>
         <Text color="gray">
-          Type <Text color="yellow">/models</Text>, <Text color="yellow">/confirm</Text>,{' '}
-          <Text color="yellow">/new</Text>, <Text color="yellow">/diff</Text>,{' '}
-          <Text color="yellow">/stop</Text> | Ctrl+C to stop/exit
+          Type <Text color="yellow">/models</Text>, <Text color="yellow">/model</Text>,{' '}
+          <Text color="yellow">/confirm</Text>, <Text color="yellow">/new</Text>,{' '}
+          <Text color="yellow">/diff</Text>, <Text color="yellow">/stop</Text> | Ctrl+C to stop/exit
         </Text>
       </Box>
 

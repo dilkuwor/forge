@@ -1258,8 +1258,9 @@ export function getEmbeddedDashboardHtml(): string {
         if (sel) {
           let optionsHtml = '';
           activeSessionsList.forEach(s => {
+            const sid = s.sessionId || s.id || '';
             const isSel = s.isSelected ? 'selected' : '';
-            optionsHtml += \`<option value="\${s.id}" \${isSel}>\${escapeHtml(s.workspaceName || 'Workspace')} (\${s.terminalId || s.id.slice(0, 8)}) - \${s.status}</option>\`;
+            optionsHtml += \`<option value="\${escapeHtml(sid)}" \${isSel}>\${escapeHtml(s.workspaceName || 'Workspace')} (\${escapeHtml(s.terminalId || sid.slice(0, 8))}) - \${s.status}\u003c/option\u003e\`;
           });
           if (activeSessionsList.length === 0) {
             optionsHtml = '<option value="">Default Session</option>';
@@ -1277,17 +1278,18 @@ export function getEmbeddedDashboardHtml(): string {
               '<th>Workspace</th><th>Session ID</th><th>Terminal / PID</th><th>Model</th><th>Status</th><th>Action</th>' +
               '</tr></thead><tbody>';
             activeSessionsList.forEach(s => {
-              const statusClass = s.status === 'RUNNING' ? 'badge-cyan' : s.status === 'ERROR' ? 'badge-red' : 'badge-green';
+              const sid = s.sessionId || s.id || '';
+              const statusClass = s.status === 'RUNNING' || s.status === 'WORKING' ? 'badge-cyan' : s.status === 'ERROR' ? 'badge-red' : 'badge-green';
               html += \`<tr>
-                <td><strong>\${escapeHtml(s.workspaceName || 'workspace')}</strong><br><small style="color:var(--text-muted);">\${escapeHtml(s.workspacePath || '')}</small></td>
-                <td><code style="background:#090d13; padding:2px 6px; border-radius:4px;">\${s.id.slice(0, 8)}</code></td>
+                <td><strong>\${escapeHtml(s.workspaceName || 'workspace')}</strong><br><small style="color:var(--text-muted);">\${escapeHtml(s.workspacePath || s.workspace || '')}</small></td>
+                <td><code style="background:#090d13; padding:2px 6px; border-radius:4px;">\${escapeHtml(sid.slice(0, 8))}</code></td>
                 <td>\${escapeHtml(s.terminalId || '-')}\${s.pid ? ' (PID ' + s.pid + ')' : ''}</td>
                 <td>\${escapeHtml(s.model || 'default')}</td>
                 <td><span class="badge \${statusClass}">\${s.status}</span></td>
                 <td>
                   \${s.isSelected
                     ? '<span class="badge badge-green">✓ Selected</span>'
-                    : \`<button class="small primary" onclick="onSessionSwitch('\${s.id}')">Switch to Session</button>\`
+                    : \`<button class="small primary" onclick="onSessionSwitch('\${escapeHtml(sid)}')">Switch to Session</button>\`
                   }
                 </td>
               </tr>\`;
@@ -1296,7 +1298,9 @@ export function getEmbeddedDashboardHtml(): string {
             c.innerHTML = html;
           }
         }
-      } catch (err) {}
+      } catch (err) {
+        console.error('Failed to load active sessions:', err);
+      }
     }
 
     async function onSessionSwitch(sessionId) {
@@ -1471,7 +1475,7 @@ export function getEmbeddedDashboardHtml(): string {
           const date = new Date(s.createdAt).toLocaleString();
           const statusClass = s.status === 'COMPLETED' ? 'badge-green' : s.status === 'ERROR' ? 'badge-red' : 'badge-cyan';
           html += \`<tr>
-            <td><code style="background:#090d13; padding:2px 6px; border-radius:4px;">\${s.id.slice(0, 8)}</code></td>
+            <td><code style="background:#090d13; padding:2px 6px; border-radius:4px;">\${(s.id || s.sessionId || '').slice(0, 8)}</code></td>
             <td style="color:var(--text-muted);">\${date}</td>
             <td style="font-weight:500;">\${s.task || 'Interactive session'}</td>
             <td><span class="badge \${statusClass}">\${s.status}</span></td>
