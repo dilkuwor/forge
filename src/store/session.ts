@@ -99,5 +99,10 @@ export function listSessions(): SessionMeta[] {
     });
   }
 
-  return sessions.reverse();
+  return sessions.sort((a, b) => {
+    const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (tA && tB && tA !== tB) return tB - tA;
+    return b.id.localeCompare(a.id);
+  });
 }

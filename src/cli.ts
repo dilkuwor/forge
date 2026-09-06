@@ -261,7 +261,7 @@ async function handleRunCommand(task: string, options?: { noConfirm?: boolean })
           uiClient.update({
             currentOperation: event.error ? `Tool failed: ${event.name}` : `Tool completed: ${event.name}`
           });
-        } else if (event.type === 'compact') {
+          } else if (event.type === 'compact') {
           console.log(
             `\x1b[33m⚡ Context compacted (${event.tokensBefore} -> ${event.tokensAfter} tokens)\x1b[0m`
           );
@@ -269,6 +269,11 @@ async function handleRunCommand(task: string, options?: { noConfirm?: boolean })
             `Context compacted (${event.tokensBefore} -> ${event.tokensAfter} tokens)`,
             'compact'
           );
+        } else if (event.type === 'token_usage') {
+          uiClient.update({
+            tokenUsage: event.tokenUsage,
+            compactions: event.compactions
+          });
         } else if (event.type === 'status') {
           console.log(`\x1b[35mℹ ${event.message}\x1b[0m`);
           uiClient.update({ currentOperation: event.message });

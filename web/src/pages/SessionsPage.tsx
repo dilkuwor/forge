@@ -226,6 +226,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                     {s.tokenUsage && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                         <span>Tokens: {formatTokens(s.tokenUsage.totalTokens)}</span>
+                        <span>Compactions: {s.compactions?.count ?? s.compactionsCount ?? 0}</span>
                         <span>Peak: <strong style={{ color: statusInfo.color }}>{util}%</strong></span>
                       </div>
                     )}

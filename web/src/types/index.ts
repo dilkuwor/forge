@@ -196,6 +196,7 @@ export interface SessionMeta {
   task?: string;
   status?: string;
   tokenUsage?: TokenUsageStats;
+  compactions?: CompactionStats;
   compactionsCount?: number;
 }
 

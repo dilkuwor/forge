@@ -6,7 +6,7 @@ import { executeTool, ToolContext, SecurityError } from '../tools/index.js';
 import { ChatMessage, ToolCallData } from '../providers/types.js';
 import { ModelRouter } from '../providers/router.js';
 import { buildSystemPrompt } from './context.js';
-import { compactHistory } from './compact.js';
+import { compactHistory, estimateTokenCount, estimateHistoryTokens } from './compact.js';
 
 export type AgentEvent =
   | { type: 'step_start'; step: number; maxSteps: number }
@@ -15,6 +15,23 @@ export type AgentEvent =
   | { type: 'tool_call_start'; id: string; name: string; args: any }
   | { type: 'tool_call_result'; id: string; name: string; result: string; error?: boolean }
   | { type: 'compact'; tokensBefore: number; tokensAfter: number }
+  | {
+      type: 'token_usage';
+      tokenUsage: {
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+        currentContextTokens: number;
+        isActual: boolean;
+      };
+      compactions?: {
+        count: number;
+        lastTokensBefore?: number;
+        lastTokensAfter?: number;
+        lastTokensFreed?: number;
+        totalTokensFreed: number;
+      };
+    }
   | { type: 'status'; message: string }
   | { type: 'done'; text: string }
   | { type: 'error'; error: Error };
@@ -48,6 +65,14 @@ export class AgentLoop {
   private maxSteps: number;
   private defaultConfirmConfig?: { edit: boolean; bash: boolean };
   private defaultOnConfirm?: (prompt: { type: 'file' | 'bash'; target: string }) => Promise<boolean>;
+  private cumulativeInputTokens: number = 0;
+  private cumulativeOutputTokens: number = 0;
+  private currentContextTokens: number = 0;
+  private isActualTokens: boolean = false;
+  private compactionCount: number = 0;
+  private totalTokensFreed: number = 0;
+  private lastTokensBefore?: number;
+  private lastTokensAfter?: number;
 
   constructor(options?: AgentLoopOptions) {
     const config = loadConfig();
@@ -121,6 +146,28 @@ export class AgentLoop {
       data: { content: prompt }
     });
 
+    this.currentContextTokens = estimateHistoryTokens(this.messages);
+    onEvent?.({
+      type: 'token_usage',
+      tokenUsage: {
+        inputTokens: this.cumulativeInputTokens,
+        outputTokens: this.cumulativeOutputTokens,
+        totalTokens: this.cumulativeInputTokens + this.cumulativeOutputTokens,
+        currentContextTokens: this.currentContextTokens,
+        isActual: this.isActualTokens
+      },
+      compactions: {
+        count: this.compactionCount,
+        lastTokensBefore: this.lastTokensBefore,
+        lastTokensAfter: this.lastTokensAfter,
+        lastTokensFreed:
+          this.lastTokensBefore && this.lastTokensAfter
+            ? Math.max(0, this.lastTokensBefore - this.lastTokensAfter)
+            : undefined,
+        totalTokensFreed: this.totalTokensFreed
+      }
+    });
+
     let step = 0;
     let finalAssistantText = '';
 
@@ -149,10 +196,34 @@ export class AgentLoop {
       const compactResult = compactHistory(this.messages, 32768, 0.7);
       if (compactResult.compacted) {
         this.messages = compactResult.messages;
+        this.compactionCount++;
+        const freed = Math.max(0, compactResult.tokensBefore - compactResult.tokensAfter);
+        this.totalTokensFreed += freed;
+        this.lastTokensBefore = compactResult.tokensBefore;
+        this.lastTokensAfter = compactResult.tokensAfter;
+        this.currentContextTokens = compactResult.tokensAfter;
+
         onEvent?.({
           type: 'compact',
           tokensBefore: compactResult.tokensBefore,
           tokensAfter: compactResult.tokensAfter
+        });
+        onEvent?.({
+          type: 'token_usage',
+          tokenUsage: {
+            inputTokens: this.cumulativeInputTokens,
+            outputTokens: this.cumulativeOutputTokens,
+            totalTokens: this.cumulativeInputTokens + this.cumulativeOutputTokens,
+            currentContextTokens: this.currentContextTokens,
+            isActual: this.isActualTokens
+          },
+          compactions: {
+            count: this.compactionCount,
+            lastTokensBefore: this.lastTokensBefore,
+            lastTokensAfter: this.lastTokensAfter,
+            lastTokensFreed: freed,
+            totalTokensFreed: this.totalTokensFreed
+          }
         });
         this.session.append({
           timestamp: new Date().toISOString(),
@@ -166,6 +237,7 @@ export class AgentLoop {
       }
 
       let chatResponse: any;
+      let stepUsage: any = undefined;
       try {
         chatResponse = await this.router.chat({
           model: this.currentModel,
@@ -178,6 +250,8 @@ export class AgentLoop {
               onEvent?.({ type: 'text', text: ev.text });
             } else if (ev.type === 'thinking') {
               onEvent?.({ type: 'thinking', text: ev.text });
+            } else if (ev.type === 'usage') {
+              stepUsage = ev.usage;
             } else if (ev.type === 'error') {
               onEvent?.({ type: 'error', error: ev.error });
             }
@@ -196,6 +270,48 @@ export class AgentLoop {
       if (chatResponse.finalModel && chatResponse.finalModel !== this.currentModel) {
         this.currentModel = chatResponse.finalModel;
       }
+
+      const usage = chatResponse.usage || stepUsage;
+      let stepIn = 0;
+      let stepOut = 0;
+      if (usage && (usage.promptTokens || usage.prompt_tokens)) {
+        this.isActualTokens = true;
+        stepIn = usage.promptTokens || usage.prompt_tokens || 0;
+        stepOut = usage.completionTokens || usage.completion_tokens || 0;
+        this.cumulativeInputTokens += stepIn;
+        this.cumulativeOutputTokens += stepOut;
+        this.currentContextTokens = stepIn + stepOut;
+      } else {
+        stepIn = estimateHistoryTokens(this.messages);
+        stepOut =
+          estimateTokenCount(chatResponse.text || '') +
+          estimateTokenCount(chatResponse.thinking || '') +
+          estimateTokenCount(JSON.stringify(chatResponse.toolCalls || []));
+        this.cumulativeInputTokens += stepIn;
+        this.cumulativeOutputTokens += stepOut;
+        this.currentContextTokens = stepIn + stepOut;
+      }
+
+      onEvent?.({
+        type: 'token_usage',
+        tokenUsage: {
+          inputTokens: this.cumulativeInputTokens,
+          outputTokens: this.cumulativeOutputTokens,
+          totalTokens: this.cumulativeInputTokens + this.cumulativeOutputTokens,
+          currentContextTokens: this.currentContextTokens,
+          isActual: this.isActualTokens
+        },
+        compactions: {
+          count: this.compactionCount,
+          lastTokensBefore: this.lastTokensBefore,
+          lastTokensAfter: this.lastTokensAfter,
+          lastTokensFreed:
+            this.lastTokensBefore && this.lastTokensAfter
+              ? Math.max(0, this.lastTokensBefore - this.lastTokensAfter)
+              : undefined,
+          totalTokensFreed: this.totalTokensFreed
+        }
+      });
 
       finalAssistantText = chatResponse.text;
 
@@ -224,7 +340,12 @@ export class AgentLoop {
         data: {
           text: chatResponse.text,
           thinking: chatResponse.thinking,
-          toolCalls: chatResponse.toolCalls
+          toolCalls: chatResponse.toolCalls,
+          usage: usage || {
+            promptTokens: stepIn,
+            completionTokens: stepOut,
+            totalTokens: stepIn + stepOut
+          }
         }
       });
 

@@ -631,6 +631,7 @@ export class ForgeAdapter extends EventEmitter {
         task: task || undefined,
         status,
         tokenUsage,
+        compactions,
         compactionsCount: compactions.count
       };
     });

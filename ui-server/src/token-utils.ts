@@ -95,6 +95,28 @@ export function computeSessionTokenStats(
   let currentContext = 0;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
+  let isActual = false;
+
+  const hasMessages = records.some((r) => r.type === 'user' || r.type === 'assistant');
+  if (!hasMessages) {
+    const modelLimit = resolveModelContextLimit(model);
+    return {
+      tokenUsage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        currentContextTokens: 0,
+        modelContextLimit: modelLimit,
+        utilizationPercent: 0,
+        estimatedRemainingTokens: modelLimit,
+        isActual: false
+      },
+      compactions: {
+        count: 0,
+        totalTokensFreed: 0
+      }
+    };
+  }
 
   // Baseline prompt estimate (~1200 tokens for system prompt)
   let runningContext = 1200;
@@ -105,15 +127,23 @@ export function computeSessionTokenStats(
       runningContext += tokens;
       if (runningContext > peakContext) peakContext = runningContext;
     } else if (rec.type === 'assistant') {
-      totalInputTokens += runningContext;
-
-      const outText = rec.data?.text || '';
-      const thinking = rec.data?.thinking || '';
-      const toolCalls = rec.data?.toolCalls ? JSON.stringify(rec.data.toolCalls) : '';
-      const stepOutTokens =
-        estimateTokenCount(outText) + estimateTokenCount(thinking) + estimateTokenCount(toolCalls);
-      totalOutputTokens += stepOutTokens;
-      runningContext += stepOutTokens;
+      if (rec.data?.usage && (rec.data.usage.promptTokens || rec.data.usage.prompt_tokens)) {
+        isActual = true;
+        const pTokens = rec.data.usage.promptTokens || rec.data.usage.prompt_tokens || 0;
+        const cTokens = rec.data.usage.completionTokens || rec.data.usage.completion_tokens || 0;
+        totalInputTokens += pTokens;
+        totalOutputTokens += cTokens;
+        runningContext = pTokens + cTokens;
+      } else {
+        totalInputTokens += runningContext;
+        const outText = rec.data?.text || '';
+        const thinking = rec.data?.thinking || '';
+        const toolCalls = rec.data?.toolCalls ? JSON.stringify(rec.data.toolCalls) : '';
+        const stepOutTokens =
+          estimateTokenCount(outText) + estimateTokenCount(thinking) + estimateTokenCount(toolCalls);
+        totalOutputTokens += stepOutTokens;
+        runningContext += stepOutTokens;
+      }
       if (runningContext > peakContext) peakContext = runningContext;
     } else if (rec.type === 'tool_result') {
       const resText = rec.data?.result || '';
@@ -150,7 +180,7 @@ export function computeSessionTokenStats(
       modelContextLimit: modelLimit,
       utilizationPercent,
       estimatedRemainingTokens,
-      isActual: false
+      isActual
     },
     compactions: {
       count: compactionCount,

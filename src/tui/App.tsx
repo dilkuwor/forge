@@ -126,6 +126,21 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
     if (main === '/compact') {
       const messages = loopRef.current.getMessages();
       const res = compactHistory(messages, 32768, 0.0); // force compact
+      if (res.compacted) {
+        const freed = Math.max(0, res.tokensBefore - res.tokensAfter);
+        uiClientRef.current?.update({
+          compactions: {
+            count: 1,
+            lastTokensBefore: res.tokensBefore,
+            lastTokensAfter: res.tokensAfter,
+            lastTokensFreed: freed,
+            totalTokensFreed: freed
+          },
+          tokenUsage: {
+            currentContextTokens: res.tokensAfter
+          }
+        });
+      }
       setHistory((prev) => [
         ...prev,
         {
@@ -422,6 +437,11 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
                 content: `History compacted: reduced from ${event.tokensBefore} to ${event.tokensAfter} tokens.`
               }
             ]);
+          } else if (event.type === 'token_usage') {
+            uiClientRef.current?.update({
+              tokenUsage: event.tokenUsage,
+              compactions: event.compactions
+            });
           } else if (event.type === 'status') {
             setStatusText(event.message);
             uiClientRef.current?.update({ currentOperation: event.message });

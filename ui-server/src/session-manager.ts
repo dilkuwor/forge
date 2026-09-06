@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { ForgeAdapter } from './forge-adapter.js';
@@ -12,7 +13,8 @@ import {
   PendingPermission,
   FileChangeItem
 } from './types/index.js';
-import { loadConfig } from '../../src/config.js';
+import { loadConfig, getSessionsDir } from '../../src/config.js';
+import { computeSessionTokenStats, resolveModelContextLimit } from './token-utils.js';
 
 interface ActiveSessionInternal {
   info: ActiveSessionInfo;
@@ -170,6 +172,12 @@ export class SessionManager extends EventEmitter {
         ...session.info.tokenUsage,
         ...update.tokenUsage
       };
+      const modelLimit = session.info.tokenUsage.modelContextLimit || resolveModelContextLimit(session.info.model);
+      session.info.tokenUsage.modelContextLimit = modelLimit;
+      const curContext = session.info.tokenUsage.currentContextTokens || 0;
+      session.info.tokenUsage.utilizationPercent = Math.min(100, Math.round((curContext / modelLimit) * 100));
+      session.info.tokenUsage.estimatedRemainingTokens = Math.max(0, modelLimit - curContext);
+      session.info.tokenUsage.totalTokens = (session.info.tokenUsage.inputTokens || 0) + (session.info.tokenUsage.outputTokens || 0);
     }
 
     if (update.compactions) {
@@ -237,11 +245,29 @@ export class SessionManager extends EventEmitter {
 
   public getActiveSessions(): (ActiveSessionInfo & { id: string })[] {
     this.pruneDeadSessions();
-    return Array.from(this.sessions.values()).map((s) => ({
-      ...s.info,
-      id: s.info.sessionId,
-      isSelected: s.info.sessionId === this.selectedSessionId
-    }));
+    return Array.from(this.sessions.values()).map((s) => {
+      this.ensureTokenStats(s);
+      return {
+        ...s.info,
+        id: s.info.sessionId,
+        isSelected: s.info.sessionId === this.selectedSessionId
+      };
+    });
+  }
+
+  private ensureTokenStats(session: ActiveSessionInternal): void {
+    if (session.info.tokenUsage && session.info.tokenUsage.totalTokens > 0) return;
+    try {
+      const filePath = path.join(getSessionsDir(), `${session.info.sessionId}.jsonl`);
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+        const records = lines.map((l) => JSON.parse(l));
+        const { tokenUsage, compactions } = computeSessionTokenStats(records, session.info.model);
+        session.info.tokenUsage = tokenUsage;
+        session.info.compactions = compactions;
+      }
+    } catch {}
   }
 
   private pruneDeadSessions() {
@@ -265,9 +291,11 @@ export class SessionManager extends EventEmitter {
   }
 
   public getSession(sessionId?: string): ActiveSessionInternal | undefined {
-    const targetId = sessionId || this.selectedSessionId;
-    if (targetId && this.sessions.has(targetId)) {
-      return this.sessions.get(targetId);
+    if (sessionId) {
+      return this.sessions.get(sessionId);
+    }
+    if (this.selectedSessionId && this.sessions.has(this.selectedSessionId)) {
+      return this.sessions.get(this.selectedSessionId);
     }
     // Fallback to first available session
     const first = this.sessions.values().next().value;
@@ -294,6 +322,8 @@ export class SessionManager extends EventEmitter {
         selectedSessionId: this.selectedSessionId || undefined
       };
     }
+
+    this.ensureTokenStats(session);
 
     return {
       isRunning: session.info.status === 'WORKING',
@@ -324,10 +354,24 @@ export class SessionManager extends EventEmitter {
   }
 
   public getSessionDetail(sessionId?: string): SessionDetailResponse | { message: string } {
+    if (sessionId && !this.sessions.has(sessionId)) {
+      const diskDetail = this.defaultAdapter.getSessionDetail(sessionId);
+      if (diskDetail) {
+        return diskDetail;
+      }
+      return { message: `Session not found: ${sessionId}` };
+    }
+
     const session = this.getSession(sessionId);
     if (!session) {
+      const diskDetail = this.defaultAdapter.getCurrentSessionDetail();
+      if (diskDetail) {
+        return diskDetail;
+      }
       return { message: 'No active session found' };
     }
+
+    this.ensureTokenStats(session);
 
     return {
       id: session.info.sessionId,
@@ -351,17 +395,32 @@ export class SessionManager extends EventEmitter {
 
   public getActivity(sessionId?: string): ActivityItem[] {
     const session = this.getSession(sessionId);
-    return session ? session.activity : [];
+    if (session) return session.activity;
+    if (sessionId) {
+      const disk = this.defaultAdapter.getSessionDetail(sessionId);
+      if (disk) return disk.activity;
+    }
+    return this.defaultAdapter.getCurrentSessionDetail()?.activity || [];
   }
 
   public getTodos(sessionId?: string): TodoItem[] {
     const session = this.getSession(sessionId);
-    return session ? session.todos : [];
+    if (session) return session.todos;
+    if (sessionId) {
+      const disk = this.defaultAdapter.getSessionDetail(sessionId);
+      if (disk) return disk.todos;
+    }
+    return this.defaultAdapter.getCurrentSessionDetail()?.todos || [];
   }
 
   public getTerminalOutput(sessionId?: string): string {
     const session = this.getSession(sessionId);
-    return session ? session.terminalOutput : '';
+    if (session) return session.terminalOutput;
+    if (sessionId) {
+      const disk = this.defaultAdapter.getSessionDetail(sessionId);
+      if (disk) return disk.terminalOutput;
+    }
+    return this.defaultAdapter.getCurrentSessionDetail()?.terminalOutput || '';
   }
 
   public getFilesChanged(sessionId?: string): FileChangeItem[] {
