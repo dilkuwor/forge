@@ -59,6 +59,25 @@ export interface TestSummary {
   rawOutput?: string;
 }
 
+export interface TokenUsageStats {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  currentContextTokens: number;
+  modelContextLimit: number;
+  utilizationPercent: number;
+  estimatedRemainingTokens: number;
+  isActual: boolean;
+}
+
+export interface CompactionStats {
+  count: number;
+  lastTokensBefore?: number;
+  lastTokensAfter?: number;
+  lastTokensFreed?: number;
+  totalTokensFreed: number;
+}
+
 export interface AgentStatusResponse {
   isRunning: boolean;
   isPaused: boolean;
@@ -73,6 +92,8 @@ export interface AgentStatusResponse {
   toolCount: number;
   elapsedTimeMs: number;
   filesChangedCount: number;
+  tokenUsage: TokenUsageStats;
+  compactions: CompactionStats;
   testStatus: { passed: number; failed: number; skipped: number } | null;
   pendingPermission: PendingPermission | null;
   activeSessionId: string | null;
@@ -147,6 +168,10 @@ export interface SessionMeta {
   cwd: string;
   model: string;
   provider: string;
+  task?: string;
+  status?: string;
+  tokenUsage?: TokenUsageStats;
+  compactionsCount?: number;
 }
 
 export interface SessionDetailResponse {
@@ -164,4 +189,6 @@ export interface SessionDetailResponse {
   touchedFiles: string[];
   terminalOutput: string;
   testSummary: TestSummary | null;
+  tokenUsage: TokenUsageStats;
+  compactions: CompactionStats;
 }

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { WebSocket } from 'ws';
 import { startServer, RunningServer } from '../src/server.js';
-import { maskApiKey } from '../src/forge-adapter.js';
+import { maskApiKey, ForgeAdapter } from '../src/forge-adapter.js';
+import { formatTokens, resolveModelContextLimit } from '../src/token-utils.js';
 
 describe('Forge UI Server API & Security Test Suite', () => {
   let serverInstance: RunningServer;
@@ -202,5 +203,105 @@ describe('Forge UI Server API & Security Test Suite', () => {
 
     ws.close();
     expect(receivedInit).toBe(true);
+  });
+
+  // --- Token & Context Monitoring Tests ---
+
+  it('17. GET /api/status returns valid tokenUsage and compactions schemas', async () => {
+    const res = await fetch(`${baseUrl}/api/status`);
+    expect(res.status).toBe(200);
+    const status = (await res.json()) as any;
+
+    expect(status).toHaveProperty('tokenUsage');
+    expect(status.tokenUsage).toHaveProperty('inputTokens');
+    expect(status.tokenUsage).toHaveProperty('outputTokens');
+    expect(status.tokenUsage).toHaveProperty('totalTokens');
+    expect(status.tokenUsage).toHaveProperty('currentContextTokens');
+    expect(status.tokenUsage).toHaveProperty('modelContextLimit');
+    expect(status.tokenUsage).toHaveProperty('utilizationPercent');
+    expect(status.tokenUsage).toHaveProperty('estimatedRemainingTokens');
+    expect(status.tokenUsage).toHaveProperty('isActual');
+    expect(typeof status.tokenUsage.isActual).toBe('boolean');
+
+    expect(status).toHaveProperty('compactions');
+    expect(status.compactions).toHaveProperty('count');
+    expect(status.compactions).toHaveProperty('totalTokensFreed');
+    expect(typeof status.compactions.count).toBe('number');
+  });
+
+  it('18. GET /api/sessions returns session items with tokenUsage and compactionsCount', async () => {
+    const res = await fetch(`${baseUrl}/api/sessions`);
+    expect(res.status).toBe(200);
+    const sessions = (await res.json()) as any[];
+    expect(Array.isArray(sessions)).toBe(true);
+
+    if (sessions.length > 0) {
+      const s = sessions[0];
+      expect(s).toHaveProperty('tokenUsage');
+      expect(s.tokenUsage).toHaveProperty('totalTokens');
+      expect(s.tokenUsage).toHaveProperty('currentContextTokens');
+      expect(s.tokenUsage).toHaveProperty('modelContextLimit');
+      expect(s.tokenUsage).toHaveProperty('utilizationPercent');
+      expect(s).toHaveProperty('compactionsCount');
+      expect(typeof s.compactionsCount).toBe('number');
+    }
+  });
+
+  it('19. formatTokens and resolveModelContextLimit format numbers and resolve known limits', () => {
+    expect(formatTokens(0)).toBe('0');
+    expect(formatTokens(450)).toBe('450');
+    expect(formatTokens(1200)).toBe('1.2K');
+    expect(formatTokens(81000)).toBe('81K');
+    expect(formatTokens(120000)).toBe('120K');
+    expect(formatTokens(1500000)).toBe('1.5M');
+
+    expect(resolveModelContextLimit('openrouter/free')).toBe(131072);
+    expect(resolveModelContextLimit('nvidia/nemotron-3-super-120b-a12b')).toBe(131072);
+    expect(resolveModelContextLimit('openai/gpt-4o')).toBe(128000);
+    expect(resolveModelContextLimit('anthropic/claude-3.5-sonnet')).toBe(200000);
+    expect(resolveModelContextLimit('unknown-model')).toBe(32768);
+  });
+
+  it('20. ForgeAdapter tracks actual/estimated token usage and compaction events properly', () => {
+    const adapter = new ForgeAdapter(process.cwd());
+
+    // Initially 0 usage, not actual
+    const initialStatus = adapter.getStatus();
+    expect(initialStatus.tokenUsage.totalTokens).toBe(0);
+    expect(initialStatus.tokenUsage.isActual).toBe(false);
+
+    // Record step with real provider usage data
+    adapter.recordStepTokenUsage(
+      {
+        text: 'Hello world',
+        usage: { promptTokens: 500, completionTokens: 100, totalTokens: 600 }
+      },
+      450,
+      'openrouter/free'
+    );
+
+    const updated = adapter.getStatus();
+    expect(updated.tokenUsage.inputTokens).toBe(500);
+    expect(updated.tokenUsage.outputTokens).toBe(100);
+    expect(updated.tokenUsage.totalTokens).toBe(600);
+    expect(updated.tokenUsage.currentContextTokens).toBe(600);
+    expect(updated.tokenUsage.isActual).toBe(true);
+    expect(updated.tokenUsage.modelContextLimit).toBe(131072);
+    expect(updated.tokenUsage.estimatedRemainingTokens).toBe(131072 - 600);
+
+    // Simulate compaction event
+    (adapter as any).handleAgentEvent({
+      type: 'compact',
+      tokensBefore: 81000,
+      tokensAfter: 34000
+    });
+
+    const compacted = adapter.getStatus();
+    expect(compacted.compactions.count).toBe(1);
+    expect(compacted.compactions.lastTokensBefore).toBe(81000);
+    expect(compacted.compactions.lastTokensAfter).toBe(34000);
+    expect(compacted.compactions.lastTokensFreed).toBe(47000);
+    expect(compacted.compactions.totalTokensFreed).toBe(47000);
+    expect(compacted.tokenUsage.currentContextTokens).toBe(34000);
   });
 });

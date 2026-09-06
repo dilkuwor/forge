@@ -1,6 +1,32 @@
 #!/usr/bin/env bash
 set -e
 
+# Check for uninstall invocation
+if [ "$1" = "--uninstall" ] || [ "$1" = "-u" ] || [ "$1" = "uninstall" ]; then
+  shift || true
+  if command -v forge >/dev/null 2>&1; then
+    exec forge uninstall "$@"
+  elif [ -x "$HOME/.forge/bin/forge" ]; then
+    exec "$HOME/.forge/bin/forge" uninstall "$@"
+  else
+    echo "Forge binary not found. Cleaning up ~/.forge/bin and shell integration..."
+    rm -rf "$HOME/.forge/bin"
+    if [ "$1" = "--purge" ] || [ "$2" = "--purge" ]; then
+      rm -rf "$HOME/.forge"
+      echo "✓ Purged ~/.forge"
+    fi
+    # Clean shell exports
+    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+      if [ -f "$rc" ] && grep -qs '\.forge/bin' "$rc"; then
+        grep -v '\.forge/bin' "$rc" > "${rc}.tmp" && mv "${rc}.tmp" "$rc"
+        echo "✓ Cleaned $rc"
+      fi
+    done
+    echo "Forge uninstalled."
+    exit 0
+  fi
+fi
+
 REPO="dilkuwor/forge"
 
 OS="$(uname -s)"
@@ -68,3 +94,5 @@ fi
 
 echo "Successfully installed forge to $TARGET"
 echo "restart the terminal, then run forge"
+echo ""
+echo "To uninstall forge at any time, run: forge uninstall"

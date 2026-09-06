@@ -78,6 +78,19 @@ The primary monitoring and control center.
   - `○ Disconnected` (red)
 - **Agent Status Badge**: `IDLE`, `WORKING`, `PAUSED`, `WAITING_APPROVAL`, `ERROR`, `COMPLETED`.
 - **Project & Session Bar**: Displays active project name, current working directory, and truncated session ID.
+- **Live Header Token Indicator**:
+  - Compact runtime status: `Step X/30 • Context XX% (XXK / XXXK tokens)` with color-coded warning dot.
+- **Context & Token Usage Panel**:
+  - **Metrics**: Input tokens, Output tokens, Total tokens, Current context tokens, Model context limit, Utilization percentage, Estimated remaining tokens.
+  - **Dynamic Progress Bar**: Color-coded progress bar (e.g. `Context 67% — 81K / 120K`).
+  - **Context Status Thresholds**:
+    - `Normal` (<60%): Green
+    - `Approaching Limit` (60–69%): Cyan/Blue
+    - `Compaction Territory` (70–84%): Yellow
+    - `High Context Usage` (85–94%): Orange
+    - `Critical` (≥95%): Red
+  - **Data Accuracy Badge**: Distinct badges for `✓ ACTUAL TOKENS` (provider-reported) vs `~ ESTIMATED TOKENS` (heuristically calculated). Never presents estimates as actual.
+  - **Compaction Events Summary**: Tracks compaction counts and tokens freed (`"Context compacted: 81K → 34K tokens (47K freed)"`).
 - **Real-Time KPIs**:
   - Step counter (`step / maxSteps`)
   - Tool execution counter
@@ -101,6 +114,11 @@ The primary monitoring and control center.
 ### 🕒 Sessions
 Session history and audit inspection.
 - **Historical Sessions**: Browse previous sessions persisted in `~/.forge/sessions/*.jsonl`.
+- **Session Token Usage**:
+  - Input, Output, and Total token tallies.
+  - Peak context usage and model limit comparison.
+  - Context utilization percentage with status warning badge.
+  - Compaction count and tokens freed.
 - **Audit Details**: Inspect user prompt, tool turns, file changes, errors, and compaction events.
 - **Session Actions**:
   - **Export Session**: Download or copy raw JSONL audit logs.
@@ -110,7 +128,7 @@ Session history and audit inspection.
 Chronological audit timeline of observable actions.
 - Collapsible cards for tool calls (`read_file`, `edit_file`, `write_file`, `bash`, `glob`, `grep`, `list_dir`, `todo`).
 - Inspect exact arguments, paths, commands, exit codes, and execution times.
-- Context compaction markers (`tokensBefore` → `tokensAfter`).
+- Context compaction markers formatted as `Context compacted: 81K → 34K tokens (47K freed)`.
 
 ### 📝 Files & Git Diff
 Codebase modifications inspector and safe rollback.

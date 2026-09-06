@@ -1,6 +1,7 @@
 import React from 'react';
 import { AgentStatusResponse } from '../types/index.js';
 import { StatusBadge } from './StatusBadge.js';
+import { formatTokens, getContextStatus } from '../lib/tokens.js';
 
 interface HeaderProps {
   status: AgentStatusResponse | null;
@@ -19,6 +20,11 @@ export const Header: React.FC<HeaderProps> = ({ status, connectionState = 'recon
     connLabel = '○ Disconnected';
   }
 
+  const utilizationPercent = status?.tokenUsage?.utilizationPercent ?? 0;
+  const contextStatus = getContextStatus(utilizationPercent);
+  const currentContext = status?.tokenUsage?.currentContextTokens ?? 0;
+  const contextLimit = status?.tokenUsage?.modelContextLimit ?? 32768;
+
   return (
     <header className="top-header">
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -35,6 +41,45 @@ export const Header: React.FC<HeaderProps> = ({ status, connectionState = 'recon
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {status?.isRunning && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '4px 10px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid var(--border)',
+              borderRadius: '6px',
+              fontSize: '0.75rem',
+              fontFamily: 'var(--font-mono)'
+            }}
+            title={`Step ${status.step}/${status.maxSteps || 30} — Context ${utilizationPercent}% (${formatTokens(currentContext)} / ${formatTokens(contextLimit)} tokens)`}
+          >
+            <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+              Step {status.step}/{status.maxSteps || 30}
+            </span>
+            <span style={{ color: 'var(--text-muted)' }}>•</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  backgroundColor: contextStatus.color
+                }}
+              />
+              <span style={{ color: contextStatus.color, fontWeight: 600 }}>
+                Context {utilizationPercent}%
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>
+                {formatTokens(currentContext)} / {formatTokens(contextLimit)} tokens
+              </span>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: connColor, fontWeight: 500 }}>
           <span>{connLabel}</span>
         </div>

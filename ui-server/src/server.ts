@@ -16,6 +16,7 @@ export interface ServerOptions {
   host?: string;
   projectRoot?: string;
   openBrowser?: boolean;
+  autoApprove?: boolean;
 }
 
 export interface RunningServer {

@@ -257,6 +257,7 @@ USAGE:
   forge models              List available/cached models and fallbacks
   forge todo                Manage in-memory todo list
   forge ui [port]           Start localhost web UI (default: http://127.0.0.1:4317)
+  forge uninstall [--purge] Safely uninstall Forge CLI and configuration (-y to skip prompt)
   forge --help              Show this help message
 
 TUI SLASH COMMANDS:
@@ -317,6 +318,14 @@ export async function main() {
     const portArg = args[1] ? parseInt(args[1], 10) : undefined;
     const { startServer } = await import('../ui-server/src/server.js');
     await startServer({ port: portArg, autoApprove: noConfirm });
+    return;
+  }
+
+  if (command === 'uninstall') {
+    const purge = rawArgs.includes('--purge');
+    const yes = noConfirm;
+    const { handleUninstallCommand } = await import('./uninstall.js');
+    await handleUninstallCommand({ purge, yes });
     return;
   }
 

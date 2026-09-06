@@ -272,6 +272,9 @@ forge login openrouter # Configure OpenRouter API key and cache free/tool models
 forge login nvidia     # Configure NVIDIA NIM API key and cache live models
 forge models           # Display active model, fallbacks, and cached model IDs
 forge ui [port]        # Launch localhost Web UI dashboard (default: http://127.0.0.1:4317)
+forge uninstall        # Cleanly uninstall Forge CLI, shell exports, and configuration
+forge uninstall --purge # Completely remove all Forge data including credentials & sessions
+forge uninstall -y     # Skip interactive confirmation prompt
 ```
 
 ### TUI Slash Commands
@@ -348,6 +351,52 @@ Default configuration stored in `~/.forge/config.json`:
   }
 }
 ```
+
+---
+
+## Uninstallation
+
+Forge provides a clean, safe uninstallation command to remove the CLI binary, shell exports, and configuration without touching your codebases.
+
+### Standard Uninstall
+
+```bash
+forge uninstall
+```
+
+This safely removes:
+- The Forge CLI binary/symlink (`~/.forge/bin/forge`, `~/.local/bin/forge`, or `/usr/local/bin/forge`)
+- Shell integration lines explicitly added to `~/.zshrc`, `~/.bashrc`, `~/.bash_profile`, `~/.profile`, or `fish` config
+- Global Forge configuration (`~/.forge/config.json`) and model cache (`~/.forge/models-cache.json`)
+
+**Preserved by default:**
+- API credentials (`~/.forge/auth.json`)
+- Session history and audit logs (`~/.forge/sessions/`)
+- User project files, git repositories, and `.forge/project.md` workspace files
+
+### Complete Removal (Purge Mode)
+
+To permanently remove all Forge state, including API credentials and historical session logs:
+
+```bash
+forge uninstall --purge
+```
+
+### Non-Interactive Uninstall
+
+To bypass the confirmation prompt in automated scripts:
+
+```bash
+forge uninstall -y
+# or with purge:
+forge uninstall --purge -y
+```
+
+### Safety Guarantees
+- **No Broad Deletion**: Never runs broad destructive commands on user directories.
+- **Strict Path Validation**: Every target binary and path is validated before removal.
+- **Surgical Shell Cleaning**: Only removes lines matching `.forge/bin` PATH exports; unrelated shell settings remain untouched.
+- **Project Isolation**: Project files, git repositories, Node/npm, Docker, and `.forge/project.md` files inside workspaces are completely protected and never modified.
 
 ---
 
