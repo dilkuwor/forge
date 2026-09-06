@@ -3,10 +3,11 @@ import { FileChangeItem } from '../types/index.js';
 import { api } from '../lib/api.js';
 
 interface DiffViewerProps {
+  sessionId?: string | null;
   onRefresh?: () => void;
 }
 
-export const DiffViewer: React.FC<DiffViewerProps> = ({ onRefresh }) => {
+export const DiffViewer: React.FC<DiffViewerProps> = ({ sessionId, onRefresh }) => {
   const [files, setFiles] = useState<FileChangeItem[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [diffText, setDiffText] = useState<string>('');
@@ -16,7 +17,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ onRefresh }) => {
 
   const loadFiles = async () => {
     try {
-      const list = await api.getFiles();
+      const list = await api.getFiles(sessionId || undefined);
       setFiles(list);
       if (list.length > 0 && !selectedFile) {
         setSelectedFile(list[0].path);
@@ -29,7 +30,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ onRefresh }) => {
   const loadDiff = async (file?: string) => {
     setLoading(true);
     try {
-      const res = await api.getDiff(file);
+      const res = await api.getDiff(file, sessionId || undefined);
       setDiffText(res.diff);
     } catch (err: any) {
       setDiffText(`Error loading diff: ${err.message}`);
@@ -40,7 +41,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ onRefresh }) => {
 
   useEffect(() => {
     loadFiles();
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     if (selectedFile) {
@@ -48,7 +49,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ onRefresh }) => {
     } else {
       loadDiff();
     }
-  }, [selectedFile]);
+  }, [selectedFile, sessionId]);
 
   const handleCopy = () => {
     if (!diffText) return;

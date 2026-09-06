@@ -15,6 +15,7 @@ interface DashboardPageProps {
   pendingPermission: PendingPermission | null;
   onRefresh: () => void;
   onNavigate?: (tab: 'dashboard' | 'sessions' | 'activity' | 'diff' | 'models' | 'providers' | 'settings' | 'permissions') => void;
+  selectedSessionId?: string | null;
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({
@@ -26,9 +27,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onRefresh,
   onNavigate
 }) => {
-  const [taskText, setTaskText] = useState('');
-  const [noConfirm, setNoConfirm] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [quickKey, setQuickKey] = useState('');
   const [quickProvider, setQuickProvider] = useState<'openrouter' | 'nvidia'>('openrouter');
   const [savingKey, setSavingKey] = useState(false);
@@ -48,21 +46,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       alert(`Failed to save key: ${err.message}`);
     } finally {
       setSavingKey(false);
-    }
-  };
-
-  const handleRunTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!taskText.trim()) return;
-    setSubmitting(true);
-    try {
-      await api.runTask(taskText.trim(), noConfirm);
-      setTaskText('');
-      onRefresh();
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -151,66 +134,68 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       )}
 
-      {/* Task input card */}
+      {/* Active Terminal Task Monitor Card */}
       <div className="forge-card">
-        <form onSubmit={handleRunTask}>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Enter task (e.g. 'Add OAuth authentication to the API' or 'Inspect repo structure')..."
-              value={taskText}
-              onChange={(e) => setTaskText(e.target.value)}
-              disabled={status?.isRunning}
-            />
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={status?.isRunning || submitting || !taskText.trim()}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>
+              Active Terminal Session
+            </span>
+            <span
+              style={{
+                background: 'rgba(88, 166, 255, 0.15)',
+                color: 'var(--cyan)',
+                border: '1px solid rgba(88, 166, 255, 0.3)',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                fontSize: '0.75rem',
+                fontFamily: 'var(--font-mono)'
+              }}
             >
-              Run Task
+              {status?.workspaceName || 'CLI'} {status?.terminalId ? `(${status.terminalId})` : ''}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={handlePause}
+              disabled={!status?.isRunning || status?.isPaused}
+            >
+              ⏸ Pause
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={handleResume}
+              disabled={!status?.isRunning || !status?.isPaused}
+            >
+              ▶ Resume
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-danger"
+              onClick={handleStop}
+              disabled={!status?.isRunning}
+            >
+              ⏹ Stop
             </button>
           </div>
+        </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={noConfirm}
-                onChange={(e) => setNoConfirm(e.target.checked)}
-                disabled={status?.isRunning}
-              />
-              <span>Auto-approve tool actions (-y)</span>
-            </label>
-
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={handlePause}
-                disabled={!status?.isRunning || status?.isPaused}
-              >
-                ⏸ Pause
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={handleResume}
-                disabled={!status?.isRunning || !status?.isPaused}
-              >
-                ▶ Resume
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-danger"
-                onClick={handleStop}
-                disabled={!status?.isRunning}
-              >
-                ⏹ Stop
-              </button>
+        <div style={{ padding: '8px 0', fontSize: '1rem', color: status?.currentTask ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          {status?.currentTask ? (
+            <div>
+              <div style={{ fontWeight: 600 }}>{status.currentTask}</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--cyan)', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
+                ▶ {status.currentOperation || 'Working...'}
+              </div>
             </div>
-          </div>
-        </form>
+          ) : (
+            <em>No active task running. Enter prompts directly in your Forge terminal.</em>
+          )}
+        </div>
       </div>
 
       {/* Project & Session Info */}
@@ -434,20 +419,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       )}
 
-      {/* Current Task & Operation Banner */}
-      {status?.currentTask && (
-        <div className="forge-card" style={{ borderLeft: '4px solid var(--cyan)' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>
-            CURRENT TASK
-          </div>
-          <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginTop: '4px' }}>
-            {status.currentTask}
-          </div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--cyan)', marginTop: '6px', fontFamily: 'var(--font-mono)' }}>
-            ▶ {status.currentOperation || 'Idle'}
-          </div>
-        </div>
-      )}
 
       {/* 2-Column Dashboard Layout */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px' }}>

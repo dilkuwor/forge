@@ -1,5 +1,5 @@
 import React from 'react';
-import { AgentStatusResponse } from '../types/index.js';
+import { AgentStatusResponse, ActiveSessionInfo } from '../types/index.js';
 import { StatusBadge } from './StatusBadge.js';
 import { formatTokens, getContextStatus } from '../lib/tokens.js';
 
@@ -7,9 +7,18 @@ interface HeaderProps {
   status: AgentStatusResponse | null;
   connected: boolean;
   connectionState?: 'connected' | 'reconnecting' | 'disconnected';
+  activeSessions?: ActiveSessionInfo[];
+  selectedSessionId?: string | null;
+  onSelectSession?: (sessionId: string) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ status, connectionState = 'reconnecting' }) => {
+export const Header: React.FC<HeaderProps> = ({
+  status,
+  connectionState = 'reconnecting',
+  activeSessions = [],
+  selectedSessionId,
+  onSelectSession
+}) => {
   let connColor = 'var(--yellow)';
   let connLabel = '⚠ Reconnecting...';
   if (connectionState === 'connected') {
@@ -27,7 +36,7 @@ export const Header: React.FC<HeaderProps> = ({ status, connectionState = 'recon
 
   return (
     <header className="top-header">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
         <div>
           <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.95rem' }}>
             {status?.projectRoot || '~/workspace'}
@@ -36,8 +45,53 @@ export const Header: React.FC<HeaderProps> = ({ status, connectionState = 'recon
             <span>Model: <strong style={{ color: 'var(--green)' }}>{status?.currentModel || 'openrouter/free'}</strong></span>
             <span>•</span>
             <span>Provider: <strong>{status?.currentProvider || 'openrouter'}</strong></span>
+            {status?.terminalId && (
+              <>
+                <span>•</span>
+                <span>Terminal: <strong style={{ color: 'var(--cyan)' }}>{status.terminalId}</strong></span>
+              </>
+            )}
           </div>
         </div>
+
+        {/* Session / Workspace Switcher */}
+        {activeSessions && activeSessions.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '4px 10px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid var(--border)',
+              borderRadius: '6px'
+            }}
+          >
+            <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>
+              Session:
+            </span>
+            <select
+              value={selectedSessionId || (activeSessions.find((s) => s.isSelected)?.sessionId) || activeSessions[0]?.sessionId || ''}
+              onChange={(e) => onSelectSession?.(e.target.value)}
+              style={{
+                background: '#090d13',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '4px',
+                padding: '2px 8px',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              {activeSessions.map((s) => (
+                <option key={s.sessionId} value={s.sessionId}>
+                  {s.workspaceName || 'Workspace'} ({s.terminalId || s.sessionId.slice(0, 8)}) - {s.status}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

@@ -1,27 +1,37 @@
 import { Server as HttpServer } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { ForgeAdapter } from '../forge-adapter.js';
+import { SessionManager } from '../session-manager.js';
 
 export class WebSocketHandler {
   private wss: WebSocketServer;
   private adapter: ForgeAdapter;
+  private sessionManager?: SessionManager;
 
-  constructor(server: HttpServer, adapter: ForgeAdapter) {
+  constructor(server: HttpServer, adapter: ForgeAdapter, sessionManager?: SessionManager) {
     this.adapter = adapter;
+    this.sessionManager = sessionManager;
     this.wss = new WebSocketServer({ server, path: '/ws' });
 
     this.setupAdapterListeners();
+    this.setupSessionManagerListeners();
     this.setupServer();
   }
 
   private setupServer() {
     this.wss.on('connection', (ws: WebSocket) => {
       // Send initial state immediately upon connection
+      const status = this.sessionManager ? this.sessionManager.getStatus() : this.adapter.getStatus();
+      const session = this.sessionManager ? this.sessionManager.getSessionDetail() : this.adapter.getCurrentSessionDetail();
+      const activeSessions = this.sessionManager ? this.sessionManager.getActiveSessions() : [];
+
       ws.send(
         JSON.stringify({
           type: 'init',
-          status: this.adapter.getStatus(),
-          session: this.adapter.getCurrentSessionDetail()
+          status,
+          session,
+          activeSessions,
+          selectedSessionId: this.sessionManager?.getSelectedSessionId() || status.activeSessionId
         })
       );
 
@@ -80,9 +90,48 @@ export class WebSocketHandler {
         this.adapter.runTask(msg.task, msg.noConfirm).catch(() => {});
         break;
 
+      case 'select_session':
+        if (msg.sessionId && this.sessionManager) {
+          this.sessionManager.selectSession(msg.sessionId);
+          const status = this.sessionManager.getStatus(msg.sessionId);
+          const session = this.sessionManager.getSessionDetail(msg.sessionId);
+          ws.send(
+            JSON.stringify({
+              type: 'session_selected',
+              sessionId: msg.sessionId,
+              status,
+              session
+            })
+          );
+        }
+        break;
+
       default:
         ws.send(JSON.stringify({ type: 'unknown_command', command: msg.type }));
     }
+  }
+
+  private setupSessionManagerListeners() {
+    if (!this.sessionManager) return;
+
+    this.sessionManager.on('sessions_changed', (sessions) => {
+      this.broadcast({ type: 'sessions_changed', sessions });
+    });
+
+    this.sessionManager.on('session_updated', (data) => {
+      this.broadcast({ type: 'session_updated', ...data });
+    });
+
+    this.sessionManager.on('selected_session_changed', (sessionId) => {
+      const status = this.sessionManager?.getStatus(sessionId);
+      const session = this.sessionManager?.getSessionDetail(sessionId);
+      this.broadcast({
+        type: 'selected_session_changed',
+        sessionId,
+        status,
+        session
+      });
+    });
   }
 
   private setupAdapterListeners() {

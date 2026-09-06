@@ -7,6 +7,7 @@ import { ToolCard } from './ToolCard.js';
 import { AgentLoop } from '../agent/loop.js';
 import { loadConfig, saveConfig, loadModelsCache, getOpenRouterKey, getNvidiaKey } from '../config.js';
 import { compactHistory } from '../agent/compact.js';
+import { UIClient } from '../ui-client.js';
 
 interface MessageItem {
   id: string;
@@ -56,9 +57,27 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
   const loopRef = useRef<AgentLoop>(new AgentLoop());
   const currentStepRef = useRef<number>(1);
   const maxStepsRef = useRef<number>(config.maxSteps || 30);
+  const uiClientRef = useRef<UIClient | null>(null);
 
   const cwd = process.cwd();
   const sessionId = loopRef.current.session.id;
+
+  // Connect to UI Server
+  useEffect(() => {
+    const client = new UIClient({
+      baseUrl: uiUrl || 'http://127.0.0.1:4317',
+      sessionId,
+      workspace: cwd,
+      model,
+      provider
+    });
+    uiClientRef.current = client;
+    client.connect().catch(() => {});
+
+    return () => {
+      client.unregister().catch(() => {});
+    };
+  }, [sessionId]);
 
   // Run initial prompt if provided
   useEffect(() => {
@@ -84,6 +103,7 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
       if (status === 'running' && abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
+      uiClientRef.current?.unregister().catch(() => {});
       loopRef.current = new AgentLoop();
       setHistory([]);
       setActiveTools([]);
@@ -91,6 +111,15 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
       setStreamingThinking('');
       setStatus('idle');
       setStatusText('Started new session');
+      const newClient = new UIClient({
+        baseUrl: uiUrl || 'http://127.0.0.1:4317',
+        sessionId: loopRef.current.session.id,
+        workspace: cwd,
+        model,
+        provider
+      });
+      uiClientRef.current = newClient;
+      newClient.connect().catch(() => {});
       return;
     }
 
@@ -168,6 +197,7 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
       if (arg === 'openrouter' || arg === 'nvidia') {
         saveConfig({ defaultProvider: arg });
         setProvider(arg);
+        uiClientRef.current?.update({ provider: arg });
         setHistory((prev) => [
           ...prev,
           {
@@ -259,6 +289,13 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
     setStreamingThinking('');
     setActiveTools([]);
 
+    uiClientRef.current?.update({
+      status: 'WORKING',
+      currentTask: text,
+      currentOperation: 'Thinking...',
+      step: 1
+    });
+
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -268,12 +305,17 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
         signal: controller.signal,
         onConfirm: async (prompt) => {
           setStatus('confirming');
+          uiClientRef.current?.update({
+            status: 'AWAITING_APPROVAL',
+            currentOperation: `Confirm ${prompt.type}: ${prompt.target}`
+          });
           return new Promise<boolean>((resolve) => {
             setConfirmation({
               type: prompt.type,
               target: prompt.target,
               resolve: (val) => {
                 setStatus('running');
+                uiClientRef.current?.update({ status: 'WORKING' });
                 setConfirmation(null);
                 resolve(val);
               }
@@ -284,15 +326,24 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
           if (event.type === 'text') {
             setStreamingText((prev) => prev + event.text);
             setStatusText(`Step ${currentStepRef.current} of ${maxStepsRef.current} · Streaming response...`);
+            uiClientRef.current?.sendTerminalChunk(event.text);
           } else if (event.type === 'thinking') {
             setStreamingThinking((prev) => prev + event.text);
             setStatusText(`Step ${currentStepRef.current} of ${maxStepsRef.current} · Thinking...`);
+            uiClientRef.current?.update({ currentOperation: 'Thinking...' });
           } else if (event.type === 'step_start') {
             currentStepRef.current = event.step;
             maxStepsRef.current = event.maxSteps;
             setStatusText(`Step ${event.step} of ${event.maxSteps} · Contacting model...`);
+            uiClientRef.current?.update({
+              step: event.step,
+              maxSteps: event.maxSteps,
+              currentOperation: `Step ${event.step}/${event.maxSteps}: Contacting model...`
+            });
           } else if (event.type === 'tool_call_start') {
             setStatusText(`Step ${currentStepRef.current} of ${maxStepsRef.current} · Running tool: ${event.name}`);
+            uiClientRef.current?.update({ currentOperation: `Running tool: ${event.name}` });
+            uiClientRef.current?.sendActivity(`Tool Call: ${event.name}`, 'shell', JSON.stringify(event.args));
             setActiveTools((prev) => [
               ...prev,
               {
@@ -308,6 +359,10 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
                 event.error ? 'Tool failed' : 'Tool completed'
               } (${event.name})`
             );
+            uiClientRef.current?.update({
+              currentOperation: event.error ? `Tool failed: ${event.name}` : `Tool completed: ${event.name}`,
+              toolCount: activeTools.length + 1
+            });
             setActiveTools((prev) =>
               prev.map((t) =>
                 t.id === event.id
@@ -320,6 +375,10 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
               )
             );
           } else if (event.type === 'compact') {
+            uiClientRef.current?.sendActivity(
+              `Context compacted (${event.tokensBefore} -> ${event.tokensAfter} tokens)`,
+              'compact'
+            );
             setHistory((prev) => [
               ...prev,
               {
@@ -330,10 +389,13 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
             ]);
           } else if (event.type === 'status') {
             setStatusText(event.message);
+            uiClientRef.current?.update({ currentOperation: event.message });
           } else if (event.type === 'done') {
             setStatusText('Finished');
+            uiClientRef.current?.update({ status: 'COMPLETED', currentOperation: 'Finished' });
           } else if (event.type === 'error') {
             setStatusText(`Error: ${event.error.message}`);
+            uiClientRef.current?.update({ status: 'ERROR', currentOperation: event.error.message });
           }
         }
       });
@@ -371,6 +433,7 @@ export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean; uiUrl?
       setStreamingText('');
       setStreamingThinking('');
       abortControllerRef.current = null;
+      uiClientRef.current?.update({ status: 'IDLE', currentOperation: 'Ready' });
     }
   };
 

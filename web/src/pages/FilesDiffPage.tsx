@@ -1,7 +1,11 @@
 import React from 'react';
 import { DiffViewer } from '../components/DiffViewer.js';
 
-export const FilesDiffPage: React.FC = () => {
+interface FilesDiffPageProps {
+  sessionId?: string | null;
+}
+
+export const FilesDiffPage: React.FC<FilesDiffPageProps> = ({ sessionId }) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div className="forge-card">
@@ -13,7 +17,7 @@ export const FilesDiffPage: React.FC = () => {
         </p>
       </div>
 
-      <DiffViewer />
+      <DiffViewer sessionId={sessionId} />
     </div>
   );
 };

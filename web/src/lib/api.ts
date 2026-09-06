@@ -1,8 +1,10 @@
 import {
   AgentStatusResponse,
+  ActiveSessionInfo,
   SessionDetailResponse,
   SessionMeta,
   ActivityItem,
+  TodoItem,
   FileChangeItem,
   TestSummary,
   ModelsDataResponse,
@@ -29,20 +31,46 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  getStatus: () => fetchJson<AgentStatusResponse>('/api/status'),
+  getStatus: (sessionId?: string) =>
+    fetchJson<AgentStatusResponse>(`/api/status${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`),
 
-  getCurrentSession: () => fetchJson<SessionDetailResponse | { message: string }>('/api/session/current'),
+  getActiveSessions: () => fetchJson<ActiveSessionInfo[]>('/api/sessions/active'),
+
+  selectSession: (sessionId: string) =>
+    fetchJson<{ success: boolean; selectedSessionId: string }>('/api/sessions/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId })
+    }),
+
+  getCurrentSession: (sessionId?: string) =>
+    fetchJson<SessionDetailResponse | { message: string }>(
+      `/api/session/current${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`
+    ),
 
   getSessions: () => fetchJson<SessionMeta[]>('/api/sessions'),
 
   getSessionDetail: (id: string) => fetchJson<SessionDetailResponse>(`/api/sessions/${encodeURIComponent(id)}`),
 
-  getActivity: () => fetchJson<ActivityItem[]>('/api/activity'),
+  getActivity: (sessionId?: string) =>
+    fetchJson<ActivityItem[]>(`/api/activity${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`),
 
-  getFiles: () => fetchJson<FileChangeItem[]>('/api/files'),
+  getTodos: (sessionId?: string) =>
+    fetchJson<TodoItem[]>(`/api/todos${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`),
 
-  getDiff: (file?: string) =>
-    fetchJson<{ diff: string }>(`/api/diff${file ? `?file=${encodeURIComponent(file)}` : ''}`),
+  getTerminalOutput: (sessionId?: string) =>
+    fetchJson<{ output: string }>(`/api/terminal${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`),
+
+  getFiles: (sessionId?: string) =>
+    fetchJson<FileChangeItem[]>(`/api/files${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`),
+
+  getDiff: (file?: string, sessionId?: string) => {
+    const q = new URLSearchParams();
+    if (file) q.set('file', file);
+    if (sessionId) q.set('session', sessionId);
+    const qs = q.toString();
+    return fetchJson<{ diff: string }>(`/api/diff${qs ? `?${qs}` : ''}`);
+  },
 
   revertFile: (file: string) =>
     fetchJson<{ success: boolean; message: string }>('/api/files/revert', {

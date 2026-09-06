@@ -78,6 +78,29 @@ export interface CompactionStats {
   totalTokensFreed: number;
 }
 
+export interface ActiveSessionInfo {
+  sessionId: string;
+  terminalId: string;
+  pid: number;
+  workspace: string;
+  workspaceName: string;
+  status: AgentStatusType;
+  currentTask?: string;
+  currentOperation?: string;
+  model: string;
+  provider: 'openrouter' | 'nvidia';
+  step: number;
+  maxSteps: number;
+  toolCount: number;
+  filesChangedCount: number;
+  elapsedTimeMs: number;
+  tokenUsage: TokenUsageStats;
+  compactions: CompactionStats;
+  registeredAt: number;
+  lastHeartbeat: number;
+  isSelected?: boolean;
+}
+
 export interface AgentStatusResponse {
   isRunning: boolean;
   isPaused: boolean;
@@ -97,6 +120,8 @@ export interface AgentStatusResponse {
   testStatus: { passed: number; failed: number; skipped: number } | null;
   pendingPermission: PendingPermission | null;
   activeSessionId: string | null;
+  terminalId?: string;
+  workspaceName?: string;
 }
 
 export interface ProviderStatus {

@@ -90,6 +90,7 @@ export class ForgeAdapter extends EventEmitter {
   private toolCount: number = 0;
   private startTime: number | null = null;
   private activeSessionId: string | null = null;
+  private currentModelName?: string;
 
   // Token & Context tracking
   private inputTokensCumulative: number = 0;
@@ -154,6 +155,9 @@ export class ForgeAdapter extends EventEmitter {
   }
 
   public recordStepTokenUsage(resp: any, estimatedPromptTokens: number, model?: string): void {
+    if (model) {
+      this.currentModelName = model;
+    }
     const usage = resp?.usage;
     let promptTokens = estimatedPromptTokens;
     let completionTokens = 0;
@@ -190,9 +194,10 @@ export class ForgeAdapter extends EventEmitter {
     const config = loadConfig();
     const elapsedTimeMs = this.startTime ? Date.now() - this.startTime : 0;
     const filesChanged = this.getFilesChanged();
-    const currentModel = this.activeLoop
-      ? (this.activeLoop as any).currentModel || config.defaultModel
-      : config.defaultModel;
+    const currentModel =
+      this.currentModelName ||
+      (this.activeLoop ? (this.activeLoop as any).currentModel : undefined) ||
+      config.defaultModel;
 
     const tokenUsage = calculateTokenUsageStats({
       inputTokens: this.inputTokensCumulative,
@@ -236,6 +241,10 @@ export class ForgeAdapter extends EventEmitter {
       pendingPermission: this.pendingPermission ? this.pendingPermission.permission : null,
       activeSessionId: this.activeSessionId
     };
+  }
+
+  public getActiveSessionId(): string | null {
+    return this.activeSessionId;
   }
 
   public getCurrentSessionDetail(): SessionDetailResponse | null {

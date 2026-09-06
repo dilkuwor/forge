@@ -1,31 +1,64 @@
 import React, { useState, useEffect } from 'react';
-import { SessionMeta, SessionDetailResponse } from '../types/index.js';
+import { SessionMeta, SessionDetailResponse, ActiveSessionInfo } from '../types/index.js';
 import { api } from '../lib/api.js';
 import { ActivityTimeline } from '../components/ActivityTimeline.js';
 import { TodoList } from '../components/TodoList.js';
 import { formatTokens, getContextStatus } from '../lib/tokens.js';
 
-export const SessionsPage: React.FC = () => {
+interface SessionsPageProps {
+  activeSessions?: ActiveSessionInfo[];
+  selectedSessionId?: string | null;
+  onSelectSession?: (sessionId: string) => void;
+}
+
+export const SessionsPage: React.FC<SessionsPageProps> = ({
+  activeSessions: initialActiveSessions,
+  selectedSessionId: currentActiveSessionId,
+  onSelectSession
+}) => {
+  const [activeSessions, setActiveSessions] = useState<ActiveSessionInfo[]>(initialActiveSessions || []);
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(currentActiveSessionId || null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadSessions();
-  }, []);
+  const loadActive = async () => {
+    try {
+      const list = await api.getActiveSessions();
+      setActiveSessions(list);
+    } catch {
+      // ignore
+    }
+  };
 
   const loadSessions = async () => {
     try {
       const list = await api.getSessions();
       setSessions(list);
-      if (list.length > 0 && !selectedSessionId) {
+      if (list.length > 0 && !selectedSessionId && activeSessions.length === 0) {
         loadDetail(list[0].id);
       }
     } catch {
       // ignore
     }
   };
+
+  useEffect(() => {
+    loadActive();
+    loadSessions();
+  }, []);
+
+  useEffect(() => {
+    if (initialActiveSessions) {
+      setActiveSessions(initialActiveSessions);
+    }
+  }, [initialActiveSessions]);
+
+  useEffect(() => {
+    if (currentActiveSessionId && !selectedSessionId) {
+      loadDetail(currentActiveSessionId);
+    }
+  }, [currentActiveSessionId]);
 
   const loadDetail = async (id: string) => {
     setSelectedSessionId(id);
@@ -45,63 +78,156 @@ export const SessionsPage: React.FC = () => {
   const detailContextStatus = getContextStatus(detailTokenUsage?.utilizationPercent ?? 0);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '20px', height: '100%' }}>
-      {/* Session list */}
-      <div className="forge-card" style={{ display: 'flex', flexDirection: 'column' }}>
-        <div className="card-title">
-          <span>Sessions History</span>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sessions.length}</span>
+    <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px', height: '100%' }}>
+      {/* Session list: Active and Historical */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
+        {/* 1. Active Terminal Sessions */}
+        <div className="forge-card" style={{ padding: '14px' }}>
+          <div className="card-title" style={{ marginBottom: '10px' }}>
+            <span>Active Terminals</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--cyan)', fontWeight: 600 }}>
+              {activeSessions.length} live
+            </span>
+          </div>
+
+          {activeSessions.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontStyle: 'italic' }}>
+              No terminal sessions currently connected.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {activeSessions.map((as) => {
+                const isSelected = selectedSessionId === as.sessionId || as.isSelected;
+                const statusClass =
+                  as.status === 'WORKING' ? 'var(--cyan)' : as.status === 'ERROR' ? 'var(--red)' : 'var(--green)';
+                return (
+                  <div
+                    key={as.sessionId}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      border: isSelected ? '1px solid var(--cyan)' : '1px solid var(--border-subtle)',
+                      background: isSelected ? 'rgba(88, 166, 255, 0.08)' : 'var(--bg-input)',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => loadDetail(as.sessionId)}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+                        {as.workspaceName}
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: statusClass, fontWeight: 600 }}>
+                        ● {as.status}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                      {as.terminalId} {as.pid ? `(PID ${as.pid})` : ''}
+                    </div>
+
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      Model: <strong>{as.model}</strong>
+                    </div>
+
+                    {as.currentTask && (
+                      <div
+                        style={{
+                          fontSize: '0.75rem',
+                          color: 'var(--text-primary)',
+                          marginTop: '4px',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}
+                      >
+                        {as.currentTask}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        Tokens: {formatTokens(as.tokenUsage?.totalTokens || 0)}
+                      </span>
+                      {onSelectSession && (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          style={{
+                            fontSize: '0.68rem',
+                            padding: '2px 8px',
+                            background: as.isSelected ? 'var(--green)' : undefined
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectSession(as.sessionId);
+                          }}
+                        >
+                          {as.isSelected ? '✓ Active' : 'Switch'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {sessions.length === 0 ? (
-          <div style={{ color: 'var(--text-muted)', padding: '16px 0', fontSize: '0.85rem' }}>
-            No saved sessions found in ~/.forge/sessions/
+        {/* 2. Historical Sessions */}
+        <div className="forge-card" style={{ padding: '14px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <div className="card-title" style={{ marginBottom: '10px' }}>
+            <span>Historical Sessions</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sessions.length}</span>
           </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto' }}>
-            {sessions.map((s) => {
-              const util = s.tokenUsage?.utilizationPercent ?? 0;
-              const statusInfo = getContextStatus(util);
-              return (
-                <div
-                  key={s.id}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-subtle)',
-                    background: selectedSessionId === s.id ? '#21262d' : 'var(--bg-input)',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => loadDetail(s.id)}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--cyan)', fontSize: '0.85rem' }}>
-                      {s.id.slice(0, 12)}
-                    </span>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--green)' }}>● Completed</span>
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    {s.createdAt ? new Date(s.createdAt).toLocaleString() : s.id}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    {s.model}
-                  </div>
-                  {s.tokenUsage && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      <span>Tokens: <strong style={{ color: 'var(--text-secondary)' }}>{formatTokens(s.tokenUsage.totalTokens)}</strong></span>
-                      <span>Peak: <strong style={{ color: statusInfo.color }}>{formatTokens(s.tokenUsage.currentContextTokens)} ({util}%)</strong></span>
+
+          {sessions.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontStyle: 'italic' }}>
+              No historical sessions found.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto' }}>
+              {sessions.map((s) => {
+                const util = s.tokenUsage?.utilizationPercent ?? 0;
+                const statusInfo = getContextStatus(util);
+                const isSelected = selectedSessionId === s.id;
+                return (
+                  <div
+                    key={s.id}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      border: isSelected ? '1px solid var(--cyan)' : '1px solid var(--border-subtle)',
+                      background: isSelected ? '#21262d' : 'var(--bg-input)',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => loadDetail(s.id)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--cyan)', fontSize: '0.8rem' }}>
+                        {s.id.slice(0, 10)}
+                      </span>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        {s.status || 'Saved'}
+                      </span>
                     </div>
-                  )}
-                  {s.compactionsCount != null && s.compactionsCount > 0 && (
-                    <div style={{ fontSize: '0.68rem', color: 'var(--yellow)', marginTop: '2px' }}>
-                      ⚡ {s.compactionsCount} {s.compactionsCount === 1 ? 'compaction' : 'compactions'}
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      {s.createdAt ? new Date(s.createdAt).toLocaleDateString() : ''}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      {s.model}
+                    </div>
+                    {s.tokenUsage && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        <span>Tokens: {formatTokens(s.tokenUsage.totalTokens)}</span>
+                        <span>Peak: <strong style={{ color: statusInfo.color }}>{util}%</strong></span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Session Detail */}

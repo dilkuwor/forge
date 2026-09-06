@@ -78,6 +78,60 @@ export interface CompactionStats {
   totalTokensFreed: number;
 }
 
+export interface ActiveSessionInfo {
+  sessionId: string;
+  terminalId: string;
+  pid: number;
+  workspace: string;
+  workspaceName: string;
+  status: AgentStatusType;
+  currentTask?: string;
+  currentOperation?: string;
+  model: string;
+  provider: 'openrouter' | 'nvidia';
+  step: number;
+  maxSteps: number;
+  toolCount: number;
+  filesChangedCount: number;
+  elapsedTimeMs: number;
+  tokenUsage: TokenUsageStats;
+  compactions: CompactionStats;
+  registeredAt: number;
+  lastHeartbeat: number;
+  isHost?: boolean;
+}
+
+export interface RegisterSessionRequest {
+  sessionId: string;
+  terminalId?: string;
+  pid?: number;
+  workspace?: string;
+  workspaceName?: string;
+  model?: string;
+  provider?: 'openrouter' | 'nvidia';
+  status?: AgentStatusType;
+}
+
+export interface SessionUpdateRequest {
+  status?: AgentStatusType;
+  currentTask?: string;
+  currentOperation?: string;
+  model?: string;
+  provider?: 'openrouter' | 'nvidia';
+  step?: number;
+  maxSteps?: number;
+  toolCount?: number;
+  elapsedTimeMs?: number;
+  filesChangedCount?: number;
+  tokenUsage?: Partial<TokenUsageStats>;
+  compactions?: Partial<CompactionStats>;
+  activityItem?: ActivityItem;
+  todoItems?: TodoItem[];
+  terminalChunk?: string;
+  touchedFile?: string;
+  pendingPermission?: PendingPermission | null;
+}
+
 export interface AgentStatusResponse {
   isRunning: boolean;
   isPaused: boolean;
@@ -97,6 +151,12 @@ export interface AgentStatusResponse {
   testStatus: { passed: number; failed: number; skipped: number } | null;
   pendingPermission: PendingPermission | null;
   activeSessionId: string | null;
+  terminalId?: string;
+  pid?: number;
+  workspace?: string;
+  workspaceName?: string;
+  activeSessions?: ActiveSessionInfo[];
+  selectedSessionId?: string;
 }
 
 export interface ProviderStatus {

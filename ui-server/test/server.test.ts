@@ -364,5 +364,133 @@ describe('Forge UI Server API & Security Test Suite', () => {
     expect(status.currentOperation).toBe('API key saved. Ready to run task.');
     expect(process.env.OPENROUTER_API_KEY).toBe('sk-or-v1-0123456789abcdef0123456789abcdef');
   });
+
+  // --- Multi-Session Support Tests ---
+
+  it('23. GET /api/health returns health probe for shared UI server', async () => {
+    const res = await fetch(`${baseUrl}/api/health`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.status).toBe('ok');
+    expect(body.server).toBe('forge-ui');
+    expect(body).toHaveProperty('activeSessionsCount');
+  });
+
+  it('24. Registers multiple terminal sessions and lists them via GET /api/sessions/active', async () => {
+    // Register terminal session 1
+    const reg1 = await fetch(`${baseUrl}/api/sessions/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'test-sess-1',
+        terminalId: 'term-1001',
+        pid: 1001,
+        workspace: '/workspace/project-a',
+        workspaceName: 'project-a',
+        model: 'openrouter/free',
+        provider: 'openrouter'
+      })
+    });
+    expect(reg1.status).toBe(200);
+
+    // Register terminal session 2
+    const reg2 = await fetch(`${baseUrl}/api/sessions/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'test-sess-2',
+        terminalId: 'term-1002',
+        pid: 1002,
+        workspace: '/workspace/project-b',
+        workspaceName: 'project-b',
+        model: 'nvidia/nemotron-3-super',
+        provider: 'nvidia'
+      })
+    });
+    expect(reg2.status).toBe(200);
+
+    // Fetch active sessions
+    const activeRes = await fetch(`${baseUrl}/api/sessions/active`);
+    expect(activeRes.status).toBe(200);
+    const active = (await activeRes.json()) as any[];
+    expect(active.length).toBeGreaterThanOrEqual(2);
+
+    const s1 = active.find((s) => s.sessionId === 'test-sess-1');
+    const s2 = active.find((s) => s.sessionId === 'test-sess-2');
+    expect(s1).toBeDefined();
+    expect(s1.terminalId).toBe('term-1001');
+    expect(s1.workspaceName).toBe('project-a');
+
+    expect(s2).toBeDefined();
+    expect(s2.terminalId).toBe('term-1002');
+    expect(s2.workspaceName).toBe('project-b');
+  });
+
+  it('25. Switches active session and updates session-scoped status and metrics', async () => {
+    // Switch to session 2
+    const selRes = await fetch(`${baseUrl}/api/sessions/select`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'test-sess-2' })
+    });
+    expect(selRes.status).toBe(200);
+
+    // Update session 2's metrics
+    const updateRes = await fetch(`${baseUrl}/api/sessions/test-sess-2/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'WORKING',
+        currentTask: 'Add OAuth 2.0 Auth Flow',
+        currentOperation: 'Running tool: write_file',
+        step: 4,
+        maxSteps: 30,
+        tokenUsage: {
+          inputTokens: 1200,
+          outputTokens: 400,
+          totalTokens: 1600,
+          currentContextTokens: 1600,
+          modelContextLimit: 131072,
+          utilizationPercent: 1,
+          estimatedRemainingTokens: 129472,
+          isActual: true
+        }
+      })
+    });
+    expect(updateRes.status).toBe(200);
+
+    // Status query scoped to session 2
+    const statusRes = await fetch(`${baseUrl}/api/status?session=test-sess-2`);
+    expect(statusRes.status).toBe(200);
+    const status = (await statusRes.json()) as any;
+    expect(status.status).toBe('WORKING');
+    expect(status.currentTask).toBe('Add OAuth 2.0 Auth Flow');
+    expect(status.step).toBe(4);
+    expect(status.tokenUsage.totalTokens).toBe(1600);
+  });
+
+  it('26. Unregisters sessions cleanly when terminal exits', async () => {
+    const unregRes = await fetch(`${baseUrl}/api/sessions/test-sess-1/unregister`, {
+      method: 'POST'
+    });
+    expect(unregRes.status).toBe(200);
+
+    const activeRes = await fetch(`${baseUrl}/api/sessions/active`);
+    const active = (await activeRes.json()) as any[];
+    expect(active.some((s) => s.sessionId === 'test-sess-1')).toBe(false);
+    expect(active.some((s) => s.sessionId === 'test-sess-2')).toBe(true);
+
+    // Cleanup session 2
+    await fetch(`${baseUrl}/api/sessions/test-sess-2/unregister`, { method: 'POST' });
+  });
+
+  it('27. Embedded HTML dashboard includes session switcher and no run-task input', async () => {
+    const html = getEmbeddedDashboardHtml();
+    expect(html).toContain('id="session-select"');
+    expect(html).toContain('loadActiveSessions');
+    expect(html).toContain('onSessionSwitch');
+    expect(html).not.toContain('id="btn-run-task"');
+    expect(html).not.toContain('startTask()');
+  });
 });
 

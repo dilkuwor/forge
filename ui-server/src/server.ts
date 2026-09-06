@@ -8,6 +8,7 @@ import { exec } from 'node:child_process';
 import { ForgeAdapter } from './forge-adapter.js';
 import { WebSocketHandler } from './websocket/handler.js';
 import { handleApiRoute } from './routes/api.js';
+import { SessionManager } from './session-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +27,9 @@ export interface RunningServer {
   host: string;
   url: string;
   adapter: ForgeAdapter;
+  sessionManager?: SessionManager;
   wsHandler: WebSocketHandler;
+  isShared?: boolean;
   close: () => Promise<void>;
 }
 
@@ -91,20 +94,48 @@ function serveStaticFile(res: ServerResponse, filePath: string): boolean {
   return true;
 }
 
+function checkServerRunning(host: string, port: number): Promise<{ isForge: boolean; data?: any }> {
+  return new Promise((resolve) => {
+    const req = http.get(`http://${host}:${port}/api/health`, { timeout: 800 }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json && (json.service === 'forge-ui' || json.status === 'ok')) {
+            resolve({ isForge: true, data: json });
+            return;
+          }
+        } catch {
+          // ignore
+        }
+        resolve({ isForge: false });
+      });
+    });
+    req.on('error', () => resolve({ isForge: false }));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ isForge: false });
+    });
+  });
+}
+
 export async function createServer(options?: ServerOptions): Promise<{
   server: HttpServer;
   adapter: ForgeAdapter;
+  sessionManager: SessionManager;
   wsHandler: WebSocketHandler;
 }> {
   const projectRoot = options?.projectRoot || process.cwd();
-  const adapter = new ForgeAdapter(projectRoot, { autoApprove: options?.autoApprove });
+  const sessionManager = new SessionManager(projectRoot, { autoApprove: options?.autoApprove });
+  const adapter = sessionManager.getDefaultAdapter();
 
   const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
     // 1. API routes
     if (parsedUrl.pathname.startsWith('/api/')) {
-      const handled = await handleApiRoute(req, res, parsedUrl, adapter);
+      const handled = await handleApiRoute(req, res, parsedUrl, adapter, sessionManager);
       if (handled) return;
     }
 
@@ -134,16 +165,47 @@ export async function createServer(options?: ServerOptions): Promise<{
     res.end(getEmbeddedDashboardHtml());
   });
 
-  const wsHandler = new WebSocketHandler(server, adapter);
+  const wsHandler = new WebSocketHandler(server, adapter, sessionManager);
 
-  return { server, adapter, wsHandler };
+  return { server, adapter, sessionManager, wsHandler };
 }
 
 export async function startServer(options?: ServerOptions): Promise<RunningServer> {
   const host = options?.host || '127.0.0.1';
   let port = options?.port || 4317;
 
-  const { server, adapter, wsHandler } = await createServer(options);
+  // Check if server is already running on the target port (only for localhost/127.0.0.1)
+  if (host === '127.0.0.1' || host === 'localhost') {
+    const check = await checkServerRunning(host, port);
+    if (check.isForge) {
+      const url = `http://${host}:${port}`;
+      console.log(`\nForge UI running at:\n${url} (connected to shared UI server)\n`);
+
+      if (options?.openBrowser !== false) {
+        openBrowserWindow(url);
+      }
+
+      const projectRoot = options?.projectRoot || process.cwd();
+      const sessionManager = new SessionManager(projectRoot, { autoApprove: options?.autoApprove });
+      const adapter = sessionManager.getDefaultAdapter();
+
+      return {
+        server: null as any,
+        port,
+        host,
+        url,
+        adapter,
+        sessionManager,
+        wsHandler: null as any,
+        isShared: true,
+        close: async () => {
+          sessionManager.destroy();
+        }
+      };
+    }
+  }
+
+  const { server, adapter, sessionManager, wsHandler } = await createServer(options);
 
   return new Promise((resolve, reject) => {
     const tryListen = (currentPort: number) => {
@@ -173,10 +235,13 @@ export async function startServer(options?: ServerOptions): Promise<RunningServe
           host,
           url,
           adapter,
+          sessionManager,
           wsHandler,
+          isShared: false,
           close: () =>
             new Promise((res) => {
-              wsHandler.close();
+              sessionManager.destroy();
+              if (wsHandler) wsHandler.close();
               server.close(() => res());
             })
         });
@@ -551,10 +616,18 @@ export function getEmbeddedDashboardHtml(): string {
   <div id="content">
     <!-- Top Header Bar -->
     <div class="header-bar">
-      <div>
-        <h2 id="project-path" style="font-size: 1.1rem; color: #fff;">~/workspace</h2>
-        <div style="font-size: 0.85rem; color: var(--text-muted);">
-          Model: <span id="current-model" style="color: var(--green);">default</span> | Provider: <span id="current-provider">openrouter</span>
+      <div style="display: flex; align-items: center; gap: 20px;">
+        <div>
+          <h2 id="project-path" style="font-size: 1.1rem; color: #fff;">~/workspace</h2>
+          <div style="font-size: 0.85rem; color: var(--text-muted);">
+            Model: <span id="current-model" style="color: var(--green);">default</span> | Provider: <span id="current-provider">openrouter</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; background: #161b22; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+          <label for="session-select" style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Session:</label>
+          <select id="session-select" onchange="onSessionSwitch(this.value)" style="font-size: 0.8rem; padding: 3px 6px; max-width: 260px;">
+            <option value="">Default Session</option>
+          </select>
         </div>
       </div>
       <div id="agent-status" class="status-badge idle">● IDLE</div>
@@ -587,12 +660,14 @@ export function getEmbeddedDashboardHtml(): string {
         <div id="quick-key-feedback" style="margin-top: 8px; font-size: 0.8rem; font-weight: 500;"></div>
       </div>
 
-      <!-- Active Task Card -->
+      <!-- Active Task & Terminal Monitor Card -->
       <div class="card">
-        <h3>Active Task</h3>
-        <div style="display: flex; gap: 8px;">
-          <input id="task-input" type="text" placeholder="Enter task (e.g. Add OAuth authentication or fix failing tests)..." style="flex: 1; padding: 10px 14px;" />
-          <button class="primary" id="btn-run-task" onclick="startTask()">Run Task</button>
+        <h3>
+          <span>Active Task & Terminal Status</span>
+          <span id="session-terminal-badge" class="badge badge-cyan">CLI Monitored</span>
+        </h3>
+        <div style="padding: 10px 0; font-size: 0.95rem; color: #fff;" id="active-task-display">
+          <em>No active task running in selected terminal session.</em>
         </div>
         <div class="controls-row">
           <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-muted); cursor: pointer; margin-right: 12px;">
@@ -689,7 +764,16 @@ export function getEmbeddedDashboardHtml(): string {
     <div id="tab-sessions" class="tab-pane" style="display: none;">
       <div class="card">
         <h3>
-          <span>Session History</span>
+          <span>Active Terminal Sessions</span>
+          <button class="small" onclick="loadActiveSessions()">Refresh</button>
+        </h3>
+        <div id="active-sessions-container">
+          <div style="color: var(--text-muted); font-size: 0.85rem;">No active terminal sessions connected.</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>
+          <span>Historical Sessions</span>
           <button class="small" onclick="loadSessions()">Refresh</button>
         </h3>
         <div id="sessions-container">
@@ -965,6 +1049,7 @@ export function getEmbeddedDashboardHtml(): string {
         const t = document.getElementById('ws-text');
         if (d) d.className = 'dot connected';
         if (t) t.innerText = 'Connected';
+        loadActiveSessions();
       };
 
       ws.onmessage = (e) => {
@@ -978,6 +1063,9 @@ export function getEmbeddedDashboardHtml(): string {
             appendTerminal(msg.chunk);
           } else if (msg.type === 'permission_required') {
             showPermission(msg.permission);
+          } else if (msg.type === 'sessions_changed' || msg.type === 'selected_session_changed' || msg.type === 'session_updated') {
+            loadActiveSessions();
+            refreshStatus();
           }
         } catch (err) {}
       };
@@ -1006,6 +1094,15 @@ export function getEmbeddedDashboardHtml(): string {
       if (statusEl) {
         statusEl.innerText = '● ' + st.status;
         statusEl.className = 'status-badge ' + (st.status ? st.status.toLowerCase() : 'idle');
+      }
+
+      const activeTaskEl = document.getElementById('active-task-display');
+      if (activeTaskEl) {
+        activeTaskEl.innerHTML = st.task ? ('<strong>' + escapeHtml(st.task) + '</strong>') : '<em>No active task running in selected terminal session.</em>';
+      }
+      const termBadge = document.getElementById('session-terminal-badge');
+      if (termBadge) {
+        termBadge.innerText = (st.workspaceName || 'CLI') + (st.terminalId ? ' (' + st.terminalId + ')' : '');
       }
 
       const mStep = document.getElementById('metric-step');
@@ -1143,20 +1240,76 @@ export function getEmbeddedDashboardHtml(): string {
       }).then(() => refreshStatus());
     }
 
-    function startTask() {
-      const taskInput = document.getElementById('task-input');
-      const task = taskInput ? taskInput.value : '';
-      if (!task.trim()) return;
-      const chk = document.getElementById('auto-approve-checkbox');
-      const noConfirm = chk ? chk.checked : false;
-      fetch('/api/agent/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, noConfirm })
-      }).then(() => {
-        if (taskInput) taskInput.value = '';
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    let activeSessionsList = [];
+    async function loadActiveSessions() {
+      try {
+        const res = await fetch('/api/sessions/active');
+        activeSessionsList = await res.json();
+        
+        // Update session switcher dropdown
+        const sel = document.getElementById('session-select');
+        if (sel) {
+          let optionsHtml = '';
+          activeSessionsList.forEach(s => {
+            const isSel = s.isSelected ? 'selected' : '';
+            optionsHtml += \`<option value="\${s.id}" \${isSel}>\${escapeHtml(s.workspaceName || 'Workspace')} (\${s.terminalId || s.id.slice(0, 8)}) - \${s.status}</option>\`;
+          });
+          if (activeSessionsList.length === 0) {
+            optionsHtml = '<option value="">Default Session</option>';
+          }
+          sel.innerHTML = optionsHtml;
+        }
+
+        // Update active sessions container in Sessions Tab
+        const c = document.getElementById('active-sessions-container');
+        if (c) {
+          if (!activeSessionsList || activeSessionsList.length === 0) {
+            c.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem;">No active terminal sessions connected.</div>';
+          } else {
+            let html = '<table class="data-table"><thead><tr>' +
+              '<th>Workspace</th><th>Session ID</th><th>Terminal / PID</th><th>Model</th><th>Status</th><th>Action</th>' +
+              '</tr></thead><tbody>';
+            activeSessionsList.forEach(s => {
+              const statusClass = s.status === 'RUNNING' ? 'badge-cyan' : s.status === 'ERROR' ? 'badge-red' : 'badge-green';
+              html += \`<tr>
+                <td><strong>\${escapeHtml(s.workspaceName || 'workspace')}</strong><br><small style="color:var(--text-muted);">\${escapeHtml(s.workspacePath || '')}</small></td>
+                <td><code style="background:#090d13; padding:2px 6px; border-radius:4px;">\${s.id.slice(0, 8)}</code></td>
+                <td>\${escapeHtml(s.terminalId || '-')}\${s.pid ? ' (PID ' + s.pid + ')' : ''}</td>
+                <td>\${escapeHtml(s.model || 'default')}</td>
+                <td><span class="badge \${statusClass}">\${s.status}</span></td>
+                <td>
+                  \${s.isSelected
+                    ? '<span class="badge badge-green">✓ Selected</span>'
+                    : \`<button class="small primary" onclick="onSessionSwitch('\${s.id}')">Switch to Session</button>\`
+                  }
+                </td>
+              </tr>\`;
+            });
+            html += '</tbody></table>';
+            c.innerHTML = html;
+          }
+        }
+      } catch (err) {}
+    }
+
+    async function onSessionSwitch(sessionId) {
+      if (!sessionId) return;
+      try {
+        await fetch('/api/sessions/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId })
+        });
+        await loadActiveSessions();
         refreshStatus();
-      });
+      } catch (err) {}
     }
 
     function pauseAgent() { fetch('/api/agent/pause', { method: 'POST' }).then(() => refreshStatus()); }

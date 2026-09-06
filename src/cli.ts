@@ -13,6 +13,7 @@ import { ModelRouter } from './providers/router.js';
 import { startTUI } from './tui/index.js';
 import { todoStore } from './todo.js';
 import { runSetup, runSetupIfNeeded } from './setup.js';
+import { UIClient } from './ui-client.js';
 
 function askQuestion(query: string): Promise<string> {
   const rl = readline.createInterface({
@@ -197,15 +198,35 @@ async function handleRunCommand(task: string, options?: { noConfirm?: boolean })
 
   const isInteractive = process.stdin.isTTY && !options?.noConfirm;
 
+  const uiClient = new UIClient({
+    sessionId: loop.session.id,
+    workspace: process.cwd(),
+    model: config.defaultModel,
+    provider: config.defaultProvider
+  });
+  await uiClient.connect().catch(() => {});
+  uiClient.update({
+    status: 'WORKING',
+    currentTask: task,
+    currentOperation: 'Starting task...',
+    step: 1
+  });
+
   const onConfirm = async (prompt: { type: 'file' | 'bash'; target: string }): Promise<boolean> => {
     if (!isInteractive) {
       // If headless non-interactive or auto-approved
       return true;
     }
+    uiClient.update({
+      status: 'AWAITING_APPROVAL',
+      currentOperation: `Confirm ${prompt.type}: ${prompt.target}`
+    });
     const ans = await askQuestion(
       `\n[Confirm] Allow ${prompt.type === 'file' ? 'edit/write to' : 'bash command'}: "${prompt.target}"? (y/n): `
     );
-    return ans.toLowerCase() === 'y' || ans.toLowerCase() === 'yes';
+    const approved = ans.toLowerCase() === 'y' || ans.toLowerCase() === 'yes';
+    uiClient.update({ status: 'WORKING' });
+    return approved;
   };
 
   try {
@@ -215,6 +236,13 @@ async function handleRunCommand(task: string, options?: { noConfirm?: boolean })
       onEvent: (event) => {
         if (event.type === 'text') {
           process.stdout.write(event.text);
+          uiClient.sendTerminalChunk(event.text);
+        } else if (event.type === 'step_start') {
+          uiClient.update({
+            step: event.step,
+            maxSteps: event.maxSteps,
+            currentOperation: `Step ${event.step}/${event.maxSteps}: Contacting model...`
+          });
         } else if (event.type === 'tool_call_start') {
           const detail =
             event.args.path ||
@@ -222,27 +250,42 @@ async function handleRunCommand(task: string, options?: { noConfirm?: boolean })
             event.args.pattern ||
             (event.args.items ? `${event.args.items.length} items` : '');
           console.log(`\n\x1b[36m⚙ [tool: ${event.name}]\x1b[0m ${detail}`);
+          uiClient.update({ currentOperation: `Running tool: ${event.name}` });
+          uiClient.sendActivity(`Tool Call: ${event.name}`, 'shell', detail);
         } else if (event.type === 'tool_call_result') {
           const summary =
             event.result.length > 250
               ? event.result.slice(0, 250) + '\n... (truncated)'
               : event.result;
           console.log(`\x1b[90m${summary}\x1b[0m\n`);
+          uiClient.update({
+            currentOperation: event.error ? `Tool failed: ${event.name}` : `Tool completed: ${event.name}`
+          });
         } else if (event.type === 'compact') {
           console.log(
             `\x1b[33m⚡ Context compacted (${event.tokensBefore} -> ${event.tokensAfter} tokens)\x1b[0m`
           );
+          uiClient.sendActivity(
+            `Context compacted (${event.tokensBefore} -> ${event.tokensAfter} tokens)`,
+            'compact'
+          );
         } else if (event.type === 'status') {
           console.log(`\x1b[35mℹ ${event.message}\x1b[0m`);
+          uiClient.update({ currentOperation: event.message });
         } else if (event.type === 'error') {
           console.error(`\x1b[31m✖ Error: ${event.error.message}\x1b[0m`);
+          uiClient.update({ status: 'ERROR', currentOperation: event.error.message });
         }
       }
     });
     console.log('');
+    uiClient.update({ status: 'COMPLETED', currentOperation: 'Finished' });
   } catch (err: any) {
     console.error(`\x1b[31mFatal error: ${err.message}\x1b[0m`);
+    uiClient.update({ status: 'ERROR', currentOperation: err.message });
     process.exit(1);
+  } finally {
+    await uiClient.unregister().catch(() => {});
   }
 }
 

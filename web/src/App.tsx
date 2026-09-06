@@ -17,6 +17,8 @@ export const App: React.FC = () => {
 
   const {
     status,
+    activeSessions,
+    selectedSessionId,
     activity,
     todos,
     terminalOutput,
@@ -24,7 +26,8 @@ export const App: React.FC = () => {
     testSummary,
     connected,
     connectionState,
-    refresh
+    refresh,
+    switchSession
   } = useAgentState();
 
   // Hash-based routing
@@ -61,7 +64,14 @@ export const App: React.FC = () => {
       <Navigation currentTab={currentTab} onSelectTab={handleSelectTab} />
 
       <div className="app-main">
-        <Header status={status} connected={connected} connectionState={connectionState} />
+        <Header
+          status={status}
+          connected={connected}
+          connectionState={connectionState}
+          activeSessions={activeSessions}
+          selectedSessionId={selectedSessionId}
+          onSelectSession={switchSession}
+        />
 
         <main className="content-scrollable">
           {currentTab === 'dashboard' && (
@@ -73,14 +83,21 @@ export const App: React.FC = () => {
               pendingPermission={pendingPermission}
               onRefresh={refresh}
               onNavigate={handleSelectTab}
+              selectedSessionId={selectedSessionId}
             />
           )}
 
-          {currentTab === 'sessions' && <SessionsPage />}
+          {currentTab === 'sessions' && (
+            <SessionsPage
+              activeSessions={activeSessions}
+              selectedSessionId={selectedSessionId}
+              onSelectSession={switchSession}
+            />
+          )}
 
           {currentTab === 'activity' && <ActivityPage activity={activity} />}
 
-          {currentTab === 'diff' && <FilesDiffPage />}
+          {currentTab === 'diff' && <FilesDiffPage sessionId={selectedSessionId} />}
 
           {currentTab === 'models' && <ModelsPage />}
 

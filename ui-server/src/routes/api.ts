@@ -1,6 +1,7 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { URL } from 'node:url';
 import { ForgeAdapter } from '../forge-adapter.js';
+import { SessionManager } from '../session-manager.js';
 
 function parseJsonBody(req: IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -44,10 +45,12 @@ export async function handleApiRoute(
   req: IncomingMessage,
   res: ServerResponse,
   parsedUrl: URL,
-  adapter: ForgeAdapter
+  adapter: ForgeAdapter,
+  sessionManager?: SessionManager
 ): Promise<boolean> {
   const pathname = parsedUrl.pathname;
   const method = req.method || 'GET';
+  const sessionId = parsedUrl.searchParams.get('session') || undefined;
 
   if (!pathname.startsWith('/api/')) {
     return false;
@@ -65,16 +68,95 @@ export async function handleApiRoute(
   }
 
   try {
-    // GET /api/status
-    if (pathname === '/api/status' && method === 'GET') {
-      sendJson(res, 200, adapter.getStatus());
+    // GET /api/health - Lightweight health probe for terminal registration
+    if (pathname === '/api/health' && method === 'GET') {
+      sendJson(res, 200, {
+        status: 'ok',
+        server: 'forge-ui',
+        port: 4317,
+        version: '0.1.0',
+        activeSessionsCount: sessionManager ? sessionManager.getActiveSessions().length : 1
+      });
       return true;
     }
 
-    // GET /api/session/current
+    // GET /api/sessions/active - List all live registered terminal sessions
+    if (pathname === '/api/sessions/active' && method === 'GET') {
+      const active = sessionManager ? sessionManager.getActiveSessions() : [];
+      sendJson(res, 200, active);
+      return true;
+    }
+
+    // POST /api/sessions/register - Register a terminal session
+    if (pathname === '/api/sessions/register' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      if (!body.sessionId) {
+        sendError(res, 400, 'sessionId is required');
+        return true;
+      }
+      const session = sessionManager
+        ? sessionManager.registerSession(body)
+        : { sessionId: body.sessionId, status: 'IDLE' };
+      sendJson(res, 200, { success: true, session });
+      return true;
+    }
+
+    // POST /api/sessions/select - Switch selected session in UI
+    if (pathname === '/api/sessions/select' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      if (!body.sessionId) {
+        sendError(res, 400, 'sessionId is required');
+        return true;
+      }
+      const success = sessionManager ? sessionManager.selectSession(body.sessionId) : false;
+      sendJson(res, 200, { success, selectedSessionId: body.sessionId });
+      return true;
+    }
+
+    // POST /api/sessions/:id/update - Update session progress & events
+    if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/update') && method === 'POST') {
+      const id = pathname.replace('/api/sessions/', '').replace('/update', '').trim();
+      const body = await parseJsonBody(req);
+      if (sessionManager) {
+        sessionManager.updateSession(id, body);
+      }
+      sendJson(res, 200, { success: true });
+      return true;
+    }
+
+    // POST /api/sessions/:id/heartbeat
+    if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/heartbeat') && method === 'POST') {
+      const id = pathname.replace('/api/sessions/', '').replace('/heartbeat', '').trim();
+      if (sessionManager) {
+        sessionManager.recordHeartbeat(id);
+      }
+      sendJson(res, 200, { success: true });
+      return true;
+    }
+
+    // POST /api/sessions/:id/unregister
+    if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/unregister') && method === 'POST') {
+      const id = pathname.replace('/api/sessions/', '').replace('/unregister', '').trim();
+      if (sessionManager) {
+        sessionManager.unregisterSession(id);
+      }
+      sendJson(res, 200, { success: true });
+      return true;
+    }
+
+    // GET /api/status - Scoped to selected session
+    if (pathname === '/api/status' && method === 'GET') {
+      const statusData = sessionManager ? sessionManager.getStatus(sessionId) : adapter.getStatus();
+      sendJson(res, 200, statusData);
+      return true;
+    }
+
+    // GET /api/session/current - Scoped to selected session
     if (pathname === '/api/session/current' && method === 'GET') {
-      const current = adapter.getCurrentSessionDetail();
-      if (!current) {
+      const current = sessionManager
+        ? sessionManager.getSessionDetail(sessionId)
+        : adapter.getCurrentSessionDetail();
+      if (!current || ('message' in current && !current.id)) {
         sendJson(res, 200, { message: 'No session active or found' });
       } else {
         sendJson(res, 200, current);
@@ -82,7 +164,7 @@ export async function handleApiRoute(
       return true;
     }
 
-    // GET /api/sessions
+    // GET /api/sessions - Historical sessions
     if (pathname === '/api/sessions' && method === 'GET') {
       sendJson(res, 200, adapter.getSessions());
       return true;
@@ -91,8 +173,10 @@ export async function handleApiRoute(
     // GET /api/sessions/:id
     if (pathname.startsWith('/api/sessions/') && method === 'GET') {
       const id = pathname.replace('/api/sessions/', '').trim();
-      const detail = adapter.getSessionDetail(id);
-      if (!detail) {
+      const detail = sessionManager
+        ? sessionManager.getSessionDetail(id)
+        : adapter.getSessionDetail(id);
+      if (!detail || ('message' in detail && !detail.id)) {
         sendError(res, 404, `Session not found: ${id}`);
       } else {
         sendJson(res, 200, detail);
@@ -100,42 +184,73 @@ export async function handleApiRoute(
       return true;
     }
 
-    // GET /api/activity
+    // GET /api/activity - Scoped to selected session
     if (pathname === '/api/activity' && method === 'GET') {
-      const current = adapter.getCurrentSessionDetail();
-      sendJson(res, 200, current?.activity || []);
+      const act = sessionManager
+        ? sessionManager.getActivity(sessionId)
+        : adapter.getCurrentSessionDetail()?.activity || [];
+      sendJson(res, 200, act);
       return true;
     }
 
-    // GET /api/files
+    // GET /api/todos - Scoped to selected session
+    if (pathname === '/api/todos' && method === 'GET') {
+      const todos = sessionManager
+        ? sessionManager.getTodos(sessionId)
+        : adapter.getCurrentSessionDetail()?.todos || [];
+      sendJson(res, 200, todos);
+      return true;
+    }
+
+    // GET /api/terminal - Scoped to selected session
+    if (pathname === '/api/terminal' && method === 'GET') {
+      const output = sessionManager
+        ? sessionManager.getTerminalOutput(sessionId)
+        : adapter.getCurrentSessionDetail()?.terminalOutput || '';
+      sendJson(res, 200, { output });
+      return true;
+    }
+
+    // GET /api/files - Scoped to selected session's workspace
     if (pathname === '/api/files' && method === 'GET') {
-      sendJson(res, 200, adapter.getFilesChanged());
+      const files = sessionManager
+        ? sessionManager.getFilesChanged(sessionId)
+        : adapter.getFilesChanged();
+      sendJson(res, 200, files);
       return true;
     }
 
-    // GET /api/diff
+    // GET /api/diff - Scoped to selected session's workspace
     if (pathname === '/api/diff' && method === 'GET') {
       const file = parsedUrl.searchParams.get('file') || undefined;
-      const diff = adapter.getDiff(file);
-      sendJson(res, 200, { diff });
+      const diff = sessionManager
+        ? sessionManager.getDiff(sessionId, file)
+        : { diff: adapter.getDiff(file) };
+      sendJson(res, 200, diff);
       return true;
     }
 
-    // POST /api/files/revert
+    // POST /api/files/revert - Scoped to selected session's workspace
     if (pathname === '/api/files/revert' && method === 'POST') {
       const body = await parseJsonBody(req);
       if (!body.file) {
         sendError(res, 400, 'File path required');
         return true;
       }
-      const result = adapter.revertFile(body.file);
+      const targetSessionId = body.sessionId || sessionId;
+      const result = sessionManager
+        ? sessionManager.revertFile(targetSessionId, body.file)
+        : adapter.revertFile(body.file);
       sendJson(res, 200, result);
       return true;
     }
 
     // POST /api/files/revert-forge and /api/files/revert-all
     if ((pathname === '/api/files/revert-forge' || pathname === '/api/files/revert-all') && method === 'POST') {
-      const result = adapter.revertForgeChanges();
+      const targetSessionId = sessionId;
+      const result = sessionManager
+        ? sessionManager.revertForgeChanges(targetSessionId)
+        : adapter.revertForgeChanges();
       sendJson(res, 200, result);
       return true;
     }
@@ -304,22 +419,36 @@ export async function handleApiRoute(
 
     // POST /api/agent/pause
     if (pathname === '/api/agent/pause' && method === 'POST') {
-      adapter.pause();
-      sendJson(res, 200, { success: true, status: adapter.getStatus() });
+      const targetAdapter = sessionManager ? sessionManager.getAdapter(sessionId) : adapter;
+      targetAdapter.pause();
+      sendJson(res, 200, { success: true, status: targetAdapter.getStatus() });
       return true;
     }
 
     // POST /api/agent/resume
     if (pathname === '/api/agent/resume' && method === 'POST') {
-      adapter.resume();
-      sendJson(res, 200, { success: true, status: adapter.getStatus() });
+      const targetAdapter = sessionManager ? sessionManager.getAdapter(sessionId) : adapter;
+      targetAdapter.resume();
+      sendJson(res, 200, { success: true, status: targetAdapter.getStatus() });
       return true;
     }
 
     // POST /api/agent/stop
     if (pathname === '/api/agent/stop' && method === 'POST') {
-      adapter.stop();
-      sendJson(res, 200, { success: true, status: adapter.getStatus() });
+      const targetAdapter = sessionManager ? sessionManager.getAdapter(sessionId) : adapter;
+      targetAdapter.stop();
+      sendJson(res, 200, { success: true, status: targetAdapter.getStatus() });
+      return true;
+    }
+
+    // POST /api/chat - Architecture ready for future separate Chat UI
+    if (pathname === '/api/chat' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      sendJson(res, 200, {
+        success: true,
+        message: 'Chat endpoint ready for future separate Chat UI.',
+        sessionId: body.sessionId || sessionId || sessionManager?.getSelectedSessionId()
+      });
       return true;
     }
 
