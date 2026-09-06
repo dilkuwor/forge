@@ -1,0 +1,22 @@
+{
+  "name": "forge-ui-server",
+  "version": "0.1.0",
+  "description": "Localhost UI server for Forge autonomous coding agent",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsup src/server.ts --format esm --out-dir dist",
+    "test": "vitest run",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "@types/ws": "^8.5.14",
+    "tsup": "^8.5.1",
+    "typescript": "^5.7.0",
+    "vitest": "^5.0.0"
+  }
+}

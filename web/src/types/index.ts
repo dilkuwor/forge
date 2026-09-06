@@ -1,0 +1,167 @@
+export interface PendingPermission {
+  id: string;
+  type: 'file' | 'bash';
+  target: string;
+  timestamp: number;
+}
+
+export type AgentStatusType =
+  | 'IDLE'
+  | 'WORKING'
+  | 'PAUSED'
+  | 'AWAITING_APPROVAL'
+  | 'ERROR'
+  | 'COMPLETED';
+
+export interface ActivityItem {
+  id: string;
+  timestamp: string;
+  type: 'info' | 'read' | 'edit' | 'shell' | 'error' | 'compact' | 'done';
+  status: 'done' | 'running' | 'failed' | 'pending';
+  title: string;
+  detail?: string;
+  durationMs?: number;
+  toolName?: string;
+  toolArgs?: any;
+  toolResult?: string;
+  diff?: string;
+}
+
+export interface TodoItem {
+  id: number;
+  text: string;
+  done: boolean;
+}
+
+export interface FileChangeItem {
+  path: string;
+  status: 'M' | 'A' | 'D' | '??';
+  additions?: number;
+  deletions?: number;
+}
+
+export interface TestCaseResult {
+  name: string;
+  suite: string;
+  status: 'passed' | 'failed' | 'skipped';
+  durationMs?: number;
+  error?: string;
+}
+
+export interface TestSummary {
+  passed: number;
+  failed: number;
+  skipped: number;
+  total: number;
+  durationMs?: number;
+  timestamp: string;
+  tests: TestCaseResult[];
+  rawOutput?: string;
+}
+
+export interface AgentStatusResponse {
+  isRunning: boolean;
+  isPaused: boolean;
+  status: AgentStatusType;
+  projectRoot: string;
+  currentTask: string;
+  currentModel: string;
+  currentProvider: string;
+  currentOperation: string;
+  step: number;
+  maxSteps: number;
+  toolCount: number;
+  elapsedTimeMs: number;
+  filesChangedCount: number;
+  testStatus: { passed: number; failed: number; skipped: number } | null;
+  pendingPermission: PendingPermission | null;
+  activeSessionId: string | null;
+}
+
+export interface ProviderStatus {
+  provider: 'openrouter' | 'nvidia';
+  configured: boolean;
+  keyMasked: string | null;
+}
+
+export interface ModelInfo {
+  id: string;
+  name?: string;
+  provider: 'openrouter' | 'nvidia';
+  pricing?: {
+    prompt?: number | string;
+    completion?: number | string;
+  };
+  contextLength?: number;
+  supportsTools?: boolean;
+}
+
+export interface ModelsDataResponse {
+  defaultModel: string;
+  defaultProvider: 'openrouter' | 'nvidia';
+  fallbackModels: string[];
+  openrouter: ModelInfo[];
+  nvidia: ModelInfo[];
+  deadModels: string[];
+}
+
+export interface AgentSettings {
+  maxSteps: number;
+  confirm: {
+    edit: boolean;
+    bash: boolean;
+  };
+  projectRoot: string;
+  historyCompactionThreshold: number;
+  bashTimeout: number;
+  security: {
+    projectRootGuard: boolean;
+    blockEnv: boolean;
+    blockSsh: boolean;
+    blockDangerousCommands: boolean;
+  };
+}
+
+export interface PermissionsPolicyResponse {
+  fileEditing: {
+    status: 'confirm_required' | 'auto_approved';
+    rule: string;
+  };
+  bashExecution: {
+    status: 'confirm_required' | 'auto_approved';
+    rule: string;
+    allowlist: string[];
+  };
+  protectedAssets: Array<{
+    target: string;
+    description: string;
+    locked: boolean;
+  }>;
+  sessionApprovedFiles: string[];
+  pendingPermission: PendingPermission | null;
+}
+
+export interface SessionMeta {
+  id: string;
+  createdAt: string;
+  cwd: string;
+  model: string;
+  provider: string;
+}
+
+export interface SessionDetailResponse {
+  id: string;
+  createdAt: string;
+  cwd: string;
+  model: string;
+  provider: string;
+  task: string;
+  status: string;
+  step: number;
+  maxSteps: number;
+  activity: ActivityItem[];
+  todos: TodoItem[];
+  touchedFiles: string[];
+  terminalOutput: string;
+  testSummary: TestSummary | null;
+}

@@ -256,6 +256,7 @@ USAGE:
   forge login nvidia        Set NVIDIA NIM API key and cache live models
   forge models              List available/cached models and fallbacks
   forge todo                Manage in-memory todo list
+  forge ui [port]           Start localhost web UI (default: http://127.0.0.1:4317)
   forge --help              Show this help message
 
 TUI SLASH COMMANDS:
@@ -272,10 +273,10 @@ TUI SLASH COMMANDS:
 export async function main() {
   const rawArgs = process.argv.slice(2);
   const noConfirm = rawArgs.some(
-    (a) => a === '-y' || a === '--yes' || a === '--no-confirm' || a === '--auto-approve'
+    (a) => a === '-y' || a === '--y' || a === '--yes' || a === '--no-confirm' || a === '--auto-approve'
   );
   const args = rawArgs.filter(
-    (a) => a !== '-y' && a !== '--yes' && a !== '--no-confirm' && a !== '--auto-approve'
+    (a) => a !== '-y' && a !== '--y' && a !== '--yes' && a !== '--no-confirm' && a !== '--auto-approve'
   );
   const command = args[0];
 
@@ -309,6 +310,13 @@ export async function main() {
 
   if (command === 'todo') {
     await handleTodoCommand(args.slice(1));
+    return;
+  }
+
+  if (command === 'ui') {
+    const portArg = args[1] ? parseInt(args[1], 10) : undefined;
+    const { startServer } = await import('../ui-server/src/server.js');
+    await startServer({ port: portArg, autoApprove: noConfirm });
     return;
   }
 

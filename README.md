@@ -25,7 +25,6 @@ Then:
 > **Note:**
 > - Node/npm is only needed for local development.
 > - Docker is optional for running in isolated test environments.
-> - `deepseek-ai/deepseek-v4-flash` is retired; do not use it.
 
 ---
 
@@ -272,6 +271,7 @@ forge run "task" -y    # Run headless with Auto-Approve (no permission prompts)
 forge login openrouter # Configure OpenRouter API key and cache free/tool models
 forge login nvidia     # Configure NVIDIA NIM API key and cache live models
 forge models           # Display active model, fallbacks, and cached model IDs
+forge ui [port]        # Launch localhost Web UI dashboard (default: http://127.0.0.1:4317)
 ```
 
 ### TUI Slash Commands
@@ -283,6 +283,49 @@ Type these commands into the prompt bar during an interactive `forge` session:
 - `/compact` — Manually trigger history compaction to reclaim token headroom.
 - `/diff` — Run `git diff` and display current uncommitted changes.
 - `/stop` — Abort the currently running agent loop.
+
+---
+
+## Localhost Web UI Dashboard
+
+Forge includes a dedicated, isolated localhost web UI for monitoring agent activity, inspecting live diffs, managing sessions, running test suites, and configuring providers and models in real-time.
+
+The Web UI operates as an independent subsystem (`ui-server/` + `web/`) communicating through a clean adapter layer without altering the core agent loop or security sandbox.
+
+### Starting the Web UI
+
+```bash
+# Launch on default port (4317)
+forge ui
+
+# Or specify a custom port
+forge ui 8080
+```
+
+Once launched, visit `http://127.0.0.1:4317` in your browser.
+
+### Key Capabilities
+
+1. **Live Agent Monitoring & Control**:
+   - Real-time agent status (`IDLE`, `RUNNING`, `PAUSED`, `WAITING_APPROVAL`, `ERROR`).
+   - Live streaming terminal log, step counters, token estimates, and active model badge.
+   - Run new tasks, pause, resume, or abort running loops directly from the browser.
+2. **Interactive Permission Prompts**:
+   - Approve or deny pending tool operations (file modifications, bash commands).
+   - Granular session-level allowlists with toggleable auto-approve mode.
+3. **Diff & File Inspector**:
+   - Live git diff inspection with side-by-side or unified view and line-by-line syntax styling.
+   - Per-file or full-tree revert actions.
+4. **Session History & Auditing**:
+   - Browse historical JSONL sessions stored in `~/.forge/sessions/`.
+   - Inspect individual event traces, compaction checkpoints, and tool outputs.
+5. **Model & Provider Management**:
+   - View cached models, change default model, reorder fallback chains, and refresh model lists.
+   - Verify provider API connectivity without exposing secret keys.
+6. **Strict Localhost Security**:
+   - Binds strictly to `127.0.0.1` (never `0.0.0.0`).
+   - Path traversal prevention on all file and diff endpoints.
+   - Masked API keys (`••••••••••••XXXX`) — raw secrets are never leaked to the client or network logs.
 
 ---
 
