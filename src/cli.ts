@@ -11,6 +11,7 @@ import {
 } from './config.js';
 import { ModelRouter } from './providers/router.js';
 import { startTUI } from './tui/index.js';
+import { todoStore } from './todo.js';
 
 function askQuestion(query: string): Promise<string> {
   const rl = readline.createInterface({
@@ -105,6 +106,72 @@ async function handleModelsCommand() {
   console.log('');
 }
 
+async function handleTodoCommand(subArgs: string[]) {
+  const subCommand = subArgs[0];
+  if (!subCommand) {
+    console.log('Usage: rcd todo <add|list|remove|toggle> [args]');
+    return;
+  }
+
+  switch (subCommand) {
+    case 'add': {
+      const text = subArgs.slice(1).join(' ');
+      if (!text) {
+        console.log('Error: todo text required. Example: rcd todo add "buy milk"');
+        return;
+      }
+      const todo = todoStore.add(text);
+      console.log(`Added todo #${todo.id}: ${todo.text}`);
+      break;
+    }
+    case 'list': {
+      const todos = todoStore.list();
+      if (todos.length === 0) {
+        console.log('No todos.');
+      } else {
+        console.log('Todos:');
+        for (const t of todos) {
+          console.log(`  [${t.done ? 'x' : ' '}] ${t.id}: ${t.text}`);
+        }
+      }
+      break;
+    }
+    case 'remove': {
+      const idStr = subArgs[1];
+      const id = parseInt(idStr, 10);
+      if (isNaN(id)) {
+        console.log('Error: valid todo id required. Example: rcd todo remove 1');
+        return;
+      }
+      const removed = todoStore.remove(id);
+      if (removed) {
+        console.log(`Removed todo #${id}`);
+      } else {
+        console.log(`Error: todo #${id} not found`);
+      }
+      break;
+    }
+    case 'toggle': {
+      const idStr = subArgs[1];
+      const id = parseInt(idStr, 10);
+      if (isNaN(id)) {
+        console.log('Error: valid todo id required. Example: rcd todo toggle 1');
+        return;
+      }
+      const todo = todoStore.toggleDone(id);
+      if (todo) {
+        console.log(`Todo #${id} marked as ${todo.done ? 'done' : 'undone'}`);
+      } else {
+        console.log(`Error: todo #${id} not found`);
+      }
+      break;
+    }
+    default:
+      console.log(`Unknown todo subcommand: ${subCommand}`);
+      console.log('Available subcommands: add, list, remove, toggle');
+  }
+}
+
 async function handleRunCommand(task: string) {
   if (!task || !task.trim()) {
     console.error('Error: task argument required. Example: rcd run "what does this repo do?"');
@@ -182,6 +249,7 @@ USAGE:
   rcd login openrouter    Set OpenRouter API key and cache free/tool models
   rcd login nvidia        Set NVIDIA NIM API key and cache live models
   rcd models              List available/cached models and fallbacks
+  rcd todo                Manage in-memory todo list
   rcd --help              Show this help message
 
 TUI SLASH COMMANDS:
@@ -223,6 +291,11 @@ export async function main() {
 
   if (command === 'models') {
     await handleModelsCommand();
+    return;
+  }
+
+  if (command === 'todo') {
+    await handleTodoCommand(args.slice(1));
     return;
   }
 
