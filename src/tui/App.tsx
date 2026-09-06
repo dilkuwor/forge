@@ -28,10 +28,16 @@ interface ConfirmationState {
   resolve: (value: boolean) => void;
 }
 
-export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => {
+export const App: React.FC<{ initialPrompt?: string; noConfirm?: boolean }> = ({
+  initialPrompt,
+  noConfirm
+}) => {
   const { exit } = useApp();
   const config = loadConfig();
 
+  const [confirmConfig, setConfirmConfig] = useState<{ edit: boolean; bash: boolean }>(
+    noConfirm ? { edit: false, bash: false } : config.confirm
+  );
   const [provider, setProvider] = useState<string>(config.defaultProvider);
   const [model, setModel] = useState<string>(config.defaultModel);
   const [inputVal, setInputVal] = useState<string>('');
@@ -182,12 +188,49 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
       return;
     }
 
+    if (main === '/confirm' || main === '/yes' || main === '/auto-approve') {
+      if (arg === 'off' || main === '/yes' || main === '/auto-approve') {
+        setConfirmConfig({ edit: false, bash: false });
+        setHistory((prev) => [
+          ...prev,
+          {
+            id: String(Date.now()),
+            type: 'system',
+            content: 'Auto-Approve enabled (Permission prompts disabled for this session).'
+          }
+        ]);
+      } else if (arg === 'on') {
+        setConfirmConfig(config.confirm);
+        setHistory((prev) => [
+          ...prev,
+          {
+            id: String(Date.now()),
+            type: 'system',
+            content: 'Permission prompts enabled.'
+          }
+        ]);
+      } else {
+        const isOff = !confirmConfig.edit && !confirmConfig.bash;
+        setHistory((prev) => [
+          ...prev,
+          {
+            id: String(Date.now()),
+            type: 'system',
+            content: `Permission prompts: ${
+              isOff ? 'DISABLED (Auto-Approve ON)' : 'ENABLED'
+            }. Usage: /confirm [on|off]`
+          }
+        ]);
+      }
+      return;
+    }
+
     setHistory((prev) => [
       ...prev,
       {
         id: String(Date.now()),
         type: 'system',
-        content: `Unknown slash command: ${main}. Available: /models, /provider, /new, /compact, /diff, /stop`
+        content: `Unknown slash command: ${main}. Available: /models, /provider, /confirm, /new, /compact, /diff, /stop`
       }
     ]);
   };
@@ -220,6 +263,7 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
 
     try {
       await loopRef.current.run(text, {
+        confirmConfig,
         signal: controller.signal,
         onConfirm: async (prompt) => {
           setStatus('confirming');
@@ -352,7 +396,13 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Header model={model} provider={provider} sessionId={sessionId} cwd={cwd} />
+      <Header
+        model={model}
+        provider={provider}
+        sessionId={sessionId}
+        cwd={cwd}
+        autoApprove={!confirmConfig.edit && !confirmConfig.bash}
+      />
 
       {/* Message History */}
       <Box flexDirection="column" marginY={1}>
@@ -431,7 +481,7 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
           Status: <Text color={status === 'running' ? 'yellow' : 'cyan'}>{statusText}</Text>
         </Text>
         <Text color="gray">
-          Type <Text color="yellow">/models</Text>, <Text color="yellow">/provider</Text>,{' '}
+          Type <Text color="yellow">/models</Text>, <Text color="yellow">/confirm</Text>,{' '}
           <Text color="yellow">/new</Text>, <Text color="yellow">/diff</Text>,{' '}
           <Text color="yellow">/stop</Text> | Ctrl+C to stop/exit
         </Text>

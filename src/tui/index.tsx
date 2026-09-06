@@ -2,7 +2,14 @@ import React from 'react';
 import { render } from 'ink';
 import { App } from './App.js';
 
-export async function startTUI(initialPrompt?: string): Promise<void> {
-  const instance = render(React.createElement(App, { initialPrompt }));
+export interface TUIOptions {
+  initialPrompt?: string;
+  noConfirm?: boolean;
+}
+
+export async function startTUI(options?: string | TUIOptions): Promise<void> {
+  const opts: TUIOptions =
+    typeof options === 'string' ? { initialPrompt: options } : options || {};
+  const instance = render(React.createElement(App, opts));
   await instance.waitUntilExit();
 }

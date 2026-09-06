@@ -6,9 +6,16 @@ export interface HeaderProps {
   provider: string;
   sessionId: string;
   cwd: string;
+  autoApprove?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ model, provider, sessionId, cwd }) => {
+export const Header: React.FC<HeaderProps> = ({
+  model,
+  provider,
+  sessionId,
+  cwd,
+  autoApprove
+}) => {
   return (
     <Box
       flexDirection="column"
@@ -47,9 +54,17 @@ export const Header: React.FC<HeaderProps> = ({ model, provider, sessionId, cwd 
             <Text color="gray"> v0.1.0 </Text>
             <Text color="yellow">⚡</Text>
           </Box>
-          <Text color="gray" italic>
-            Autonomous Coding Agent
-          </Text>
+          <Box>
+            {autoApprove ? (
+              <Text backgroundColor="yellow" color="black" bold>
+                {' NO-CONFIRM '}
+              </Text>
+            ) : (
+              <Text color="gray" italic>
+                Autonomous Coding Agent
+              </Text>
+            )}
+          </Box>
         </Box>
       </Box>
 

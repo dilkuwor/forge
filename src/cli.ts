@@ -172,13 +172,17 @@ async function handleTodoCommand(subArgs: string[]) {
   }
 }
 
-async function handleRunCommand(task: string) {
+async function handleRunCommand(task: string, options?: { noConfirm?: boolean }) {
   if (!task || !task.trim()) {
     console.error('Error: task argument required. Example: rcd run "what does this repo do?"');
     process.exit(1);
   }
 
   const config = loadConfig();
+  const confirmConfig = options?.noConfirm
+    ? { edit: false, bash: false }
+    : config.confirm;
+
   const router = new ModelRouter();
 
   // Boot cache update non-blocking
@@ -186,14 +190,15 @@ async function handleRunCommand(task: string) {
 
   const loop = new AgentLoop({
     router,
-    projectRoot: process.cwd()
+    projectRoot: process.cwd(),
+    confirmConfig
   });
 
-  const isInteractive = process.stdin.isTTY;
+  const isInteractive = process.stdin.isTTY && !options?.noConfirm;
 
   const onConfirm = async (prompt: { type: 'file' | 'bash'; target: string }): Promise<boolean> => {
     if (!isInteractive) {
-      // If headless non-interactive, check config
+      // If headless non-interactive or auto-approved
       return true;
     }
     const ans = await askQuestion(
@@ -204,6 +209,7 @@ async function handleRunCommand(task: string) {
 
   try {
     await loop.run(task, {
+      confirmConfig,
       onConfirm,
       onEvent: (event) => {
         if (event.type === 'text') {
@@ -244,8 +250,8 @@ function printHelp() {
 routercode (rcd) - Terminal coding agent
 
 USAGE:
-  rcd                     Start interactive TUI in current directory
-  rcd run "<task>"        Run a task headless without TUI
+  rcd [-y]                Start interactive TUI (-y for auto-approve / no-confirm)
+  rcd run "<task>" [-y]   Run a task headless without TUI (-y for auto-approve)
   rcd login openrouter    Set OpenRouter API key and cache free/tool models
   rcd login nvidia        Set NVIDIA NIM API key and cache live models
   rcd models              List available/cached models and fallbacks
@@ -255,6 +261,7 @@ USAGE:
 TUI SLASH COMMANDS:
   /models                 List cached models
   /provider               Switch or view provider (/provider openrouter|nvidia)
+  /confirm [on|off]       Toggle auto-approve / permission prompts in current session
   /new                    Start a new session
   /compact                Compact history context
   /diff                   Show git diff
@@ -263,18 +270,24 @@ TUI SLASH COMMANDS:
 }
 
 export async function main() {
-  const args = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
+  const noConfirm = rawArgs.some(
+    (a) => a === '-y' || a === '--yes' || a === '--no-confirm' || a === '--auto-approve'
+  );
+  const args = rawArgs.filter(
+    (a) => a !== '-y' && a !== '--yes' && a !== '--no-confirm' && a !== '--auto-approve'
+  );
   const command = args[0];
 
   if (!command || command === 'start') {
     // Start TUI
-    await startTUI();
+    await startTUI({ noConfirm });
     return;
   }
 
   if (command === 'run') {
     const task = args.slice(1).join(' ');
-    await handleRunCommand(task);
+    await handleRunCommand(task, { noConfirm });
     return;
   }
 
@@ -315,8 +328,8 @@ export async function main() {
     printHelp();
     process.exit(1);
   } else {
-    // Convenience: `rcd "what does this repo do?"` works like `rcd run "what does this repo do?"` or launches TUI with initial prompt
-    await startTUI(args.join(' '));
+    // Convenience: `rcd "what does this repo do?"` launches TUI with initial prompt
+    await startTUI({ initialPrompt: args.join(' '), noConfirm });
   }
 }
 

@@ -259,7 +259,9 @@ Only 8 core tools are available to prevent unexpected behavior:
 ### CLI Commands
 ```bash
 rcd                  # Start interactive TUI in current directory
+rcd -y               # Start TUI with Auto-Approve ON (no permission prompts)
 rcd run "task"       # One-shot headless execution without TUI
+rcd run "task" -y    # Run headless with Auto-Approve (no permission prompts)
 rcd login openrouter # Configure OpenRouter API key and cache free/tool models
 rcd login nvidia     # Configure NVIDIA NIM API key and cache live models
 rcd models           # Display active model, fallbacks, and cached model IDs
@@ -269,6 +271,7 @@ rcd models           # Display active model, fallbacks, and cached model IDs
 Type these commands into the prompt bar during an interactive `rcd` session:
 - `/models` — Display active model, fallback sequence, and cached models.
 - `/provider [openrouter|nvidia]` — Show or switch active provider.
+- `/confirm [on|off]` — Toggle permission prompts / Auto-Approve on the fly.
 - `/new` — Reset the session, clear working memory, and generate a new session ID.
 - `/compact` — Manually trigger history compaction to reclaim token headroom.
 - `/diff` — Run `git diff` and display current uncommitted changes.
