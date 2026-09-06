@@ -26,75 +26,70 @@ Then:
 
 ```mermaid
 flowchart TD
-    subgraph ClientLayer ["1. Presentation & CLI Layer"]
-        CLI["CLI Entrypoint (rcd / rcd run)\nsrc/cli.ts"]
-        TUI["Interactive TUI (Ink + React)\nsrc/tui/"]
-        Headless["Headless Execution Engine\nsrc/cli.ts"]
-        CLI -->|interactive| TUI
-        CLI -->|one-shot| Headless
+    subgraph ClientLayer ["1. Presentation and CLI Layer"]
+        CLI["CLI Entrypoint: rcd / rcd run<br/>src/cli.ts"]
+        TUI["Interactive TUI: Ink + React<br/>src/tui/"]
+        Headless["Headless Execution Engine<br/>src/cli.ts"]
+        CLI -->|"interactive"| TUI
+        CLI -->|"one-shot"| Headless
     end
 
     subgraph AgentLayer ["2. Autonomous Agent Core"]
-        Loop["ReAct Agent Loop\nsrc/agent/loop.ts"]
-        Context["Context & Repo Mapper\nsrc/agent/context.ts"]
-        Compact["History Compaction Engine\nsrc/agent/compact.ts"]
+        Loop["ReAct Agent Loop<br/>src/agent/loop.ts"]
+        Context["Context and Repo Mapper<br/>src/agent/context.ts"]
+        Compact["History Compaction Engine<br/>src/agent/compact.ts"]
         Guard["2x Consecutive Failure Guard"]
 
-        TUI <-->|events & stream| Loop
-        Headless <-->|events & stream| Loop
+        TUI <-->|"events and stream"| Loop
+        Headless <-->|"events and stream"| Loop
 
-        Loop -->|rebuilds prompt| Context
-        Loop -->|checks token ratio| Compact
-        Loop -->|verifies failures| Guard
+        Loop -->|"rebuilds prompt"| Context
+        Loop -->|"checks token ratio"| Compact
+        Loop -->|"verifies failures"| Guard
     end
 
-    subgraph ToolsLayer ["3. Tool & Security Sandbox"]
-        Tools["Tool Dispatcher\nsrc/tools/index.ts"]
-        Perms["Permission & Session Allowlist"]
-        Security["Security Policy Enforcer\n(blocks path escapes, .env, sudo, etc.)"]
+    subgraph ToolsLayer ["3. Tool and Security Sandbox"]
+        Tools["Tool Dispatcher<br/>src/tools/index.ts"]
+        Perms["Permission and Session Allowlist"]
+        Security["Security Policy Enforcer<br/>blocks path escapes, .env, sudo, etc."]
 
-        ReadFile["read_file"]
-        WriteFile["write_file (confirm)"]
-        EditFile["edit_file (exact replace, confirm)"]
-        ListDir["list_dir"]
-        Glob["glob (native fs)"]
-        Grep["grep (ripgrep / Node fallback)"]
-        Bash["bash (cwd=root, 60s, truncated)"]
-        Todo["todo (progress tracker)"]
+        CoreTools["8 Core Tools:<br/>read_file, write_file, edit_file, list_dir<br/>glob, grep, bash, todo"]
 
-        Loop -->|tool_calls| Tools
+        Loop -->|"tool calls"| Tools
         Tools --> Security
         Security --> Perms
-        Perms --> ReadFile & WriteFile & EditFile & ListDir & Glob & Grep & Bash & Todo
-        ReadFile & WriteFile & EditFile & ListDir & Glob & Grep & Bash & Todo -->|results| Loop
+        Perms --> CoreTools
+        CoreTools -->|"tool results"| Loop
     end
 
-    subgraph RoutingLayer ["4. Provider & Routing Subsystem"]
-        Router["Model Router\nsrc/providers/router.ts"]
-        ORClient["OpenRouter Provider\nsrc/providers/openrouter.ts"]
-        NVClient["NVIDIA NIM Provider\nsrc/providers/nvidia.ts"]
+    subgraph RoutingLayer ["4. Provider and Routing Subsystem"]
+        Router["Model Router<br/>src/providers/router.ts"]
+        ORClient["OpenRouter Provider<br/>src/providers/openrouter.ts"]
+        NVClient["NVIDIA NIM Provider<br/>src/providers/nvidia.ts"]
 
-        Loop -->|chat({ model, messages, tools })| Router
-        Router -->|404/410: mark dead & fallback| Router
-        Router -->|429: backoff & retry 2x| Router
-        Router -->|tool unsupported: skip| Router
+        Loop -->|"chat request"| Router
+        Router -->|"404/410: mark dead and fallback"| Router
+        Router -->|"429: backoff and retry 2x"| Router
+        Router -->|"tool unsupported: skip"| Router
 
-        Router -->|openrouter models| ORClient
-        Router -->|nvidia models| NVClient
+        Router -->|"openrouter models"| ORClient
+        Router -->|"nvidia models"| NVClient
 
-        ORClient -->|OpenAI SDK / HTTPS| OpenRouterAPI[("OpenRouter API\n(openrouter.ai/api/v1)")]
-        NVClient -->|OpenAI SDK / HTTPS| NvidiaAPI[("NVIDIA NIM API\n(integrate.api.nvidia.com/v1)")]
+        ORClient -->|"OpenAI SDK / HTTPS"| OpenRouterAPI[("OpenRouter API<br/>openrouter.ai/api/v1")]
+        NVClient -->|"OpenAI SDK / HTTPS"| NvidiaAPI[("NVIDIA NIM API<br/>integrate.api.nvidia.com/v1")]
     end
 
-    subgraph StorageLayer ["5. Persistence & Local State (~/.rcd/)"]
-        Config["Config (~/.rcd/config.json)"]
-        Auth["Auth Store (~/.rcd/auth.json)"]
-        ModelCache["Model Cache (~/.rcd/models-cache.json)"]
-        Sessions["JSONL Sessions (~/.rcd/sessions/<id>.jsonl)"]
-        ProjectMd["Project Overrides (./.rcd/project.md)"]
+    subgraph StorageLayer ["5. Persistence and Local State ~/.rcd/"]
+        Config["Config: ~/.rcd/config.json"]
+        Auth["Auth Store: ~/.rcd/auth.json"]
+        ModelCache["Model Cache: ~/.rcd/models-cache.json"]
+        Sessions["JSONL Sessions: ~/.rcd/sessions/*.jsonl"]
+        ProjectMd["Project Overrides: ./.rcd/project.md"]
 
-        CLI -.-> Auth & Config
-        Router -.-> ModelCache & Config
+        CLI -.-> Auth
+        CLI -.-> Config
+        Router -.-> ModelCache
+        Router -.-> Config
         Loop -.-> Sessions
         Context -.-> ProjectMd
     end
@@ -108,33 +103,33 @@ flowchart TD
 sequenceDiagram
     autonumber
     actor User
-    participant CLI as CLI / TUI (App.tsx)
-    participant Loop as AgentLoop (loop.ts)
-    participant Ctx as Context (context.ts)
-    participant Comp as Compactor (compact.ts)
-    participant Router as ModelRouter (router.ts)
+    participant CLI as CLI / TUI
+    participant Agent as AgentLoop
+    participant Ctx as Context Engine
+    participant Comp as Compactor
+    participant Router as ModelRouter
     participant Provider as Provider (OpenAI SDK)
-    participant Tools as Tool Sandbox (tools/index.ts)
-    participant Session as SessionStore (session.ts)
+    participant Tools as Tool Sandbox
+    participant Session as SessionStore
 
     User->>CLI: Enter task prompt
-    CLI->>Loop: run(prompt)
-    Loop->>Session: Append user record
+    CLI->>Agent: run(prompt)
+    Agent->>Session: Append user record
 
-    loop ReAct Iteration (step <= maxSteps)
-        Loop->>Ctx: buildSystemPrompt(projectRoot, touchedFiles)
-        Ctx-->>Loop: System prompt with repo tree & touched files
-        Loop->>Comp: compactHistory(messages, contextWindow, 0.7)
+    loop ReAct Iteration
+        Agent->>Ctx: buildSystemPrompt(projectRoot, touchedFiles)
+        Ctx-->>Agent: System prompt with repo tree and touched files
+        Agent->>Comp: compactHistory(messages, contextWindow, 0.7)
         alt Context exceeds 70% threshold
-            Comp-->>Loop: Compacted message list (summarized history)
-            Loop->>Session: Log compaction event
+            Comp-->>Agent: Compacted message list (summarized history)
+            Agent->>Session: Log compaction event
         end
 
-        Loop->>Router: chat({ model, messages, tools, stream: true })
+        Agent->>Router: chat(model, messages, tools, stream)
 
-        loop Router Fallback & Retry
-            Router->>Provider: client.chat.completions.create()
-            alt 404 / 410 Model Dead
+        loop Router Fallback and Retry
+            Router->>Provider: create chat completion
+            alt 404 or 410 Model Dead
                 Provider-->>Router: HTTP 404 / 410
                 Router->>Router: Mark model dead, pick next fallback
             else 429 Rate Limit
@@ -145,36 +140,35 @@ sequenceDiagram
             end
         end
 
-        Router-->>CLI: Stream text & thinking chunks to screen
-        Router-->>Loop: Assistant response + tool_calls
+        Router-->>CLI: Stream text and thinking chunks to screen
+        Router-->>Agent: Assistant response + tool_calls
 
-        Loop->>Session: Append assistant record
+        Agent->>Session: Append assistant record
 
         alt No tool calls returned
-            Loop->>CLI: Done (final answer reached)
-            break
-        end
-
-        loop Execute each tool call
-            Loop->>Loop: Check 2x consecutive failure guard
-            alt Failed 2x previously with same args
-                Loop->>Loop: Halt path, return error explanation to model
-            else Within limits
-                Loop->>Tools: executeTool(name, args)
-                Tools->>Tools: Security check (deny escape, .env, sudo, rm -rf /)
-                alt Requires user confirmation
-                    Tools->>CLI: Prompt user confirmation
-                    CLI->>User: Display confirmation dialog
-                    User-->>CLI: Approve [y] / Deny [n]
-                    CLI-->>Tools: Confirmation result
+            Agent->>CLI: Done (final answer reached)
+        else Tool calls present
+            loop Execute each tool call
+                Agent->>Agent: Check 2x consecutive failure guard
+                alt Failed 2x previously with same args
+                    Agent->>Agent: Halt path, return error explanation to model
+                else Within limits
+                    Agent->>Tools: executeTool(name, args)
+                    Tools->>Tools: Security check: deny escape, .env, sudo, rm -rf /
+                    alt Requires user confirmation
+                        Tools->>CLI: Prompt user confirmation
+                        CLI->>User: Display confirmation dialog
+                        User-->>CLI: Approve or Deny
+                        CLI-->>Tools: Confirmation result
+                    end
+                    Tools-->>Agent: Tool execution output
                 end
-                Tools-->>Loop: Tool execution output
+                Agent->>Session: Append tool_result record
+                Agent->>Agent: Append tool result message to history
             end
-            Loop->>Session: Append tool_result record
-            Loop->>Loop: Append tool result message to history
         end
     end
-    Loop-->>CLI: Completed execution
+    Agent-->>CLI: Completed execution
 ```
 
 ---
