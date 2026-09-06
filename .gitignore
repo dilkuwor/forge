@@ -1,0 +1,7 @@
+node_modules/
+dist/
+rcd-*
+.rcd/
+*.log
+coverage/
+.DS_Store

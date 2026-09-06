@@ -1,0 +1,38 @@
+{
+  "name": "routercode",
+  "version": "0.1.0",
+  "description": "A terminal coding agent",
+  "type": "module",
+  "bin": {
+    "rcd": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "terminal",
+    "ai",
+    "coding-agent",
+    "react-loop",
+    "openrouter",
+    "nvidia"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ink": "^7.1.1",
+    "ink-text-input": "^6.0.0",
+    "openai": "^7.10.0",
+    "react": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}
