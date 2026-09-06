@@ -19,7 +19,7 @@ export class OpenRouterProvider implements ProviderClient {
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey,
         defaultHeaders: {
-          'HTTP-Referer': 'https://github.com/routercode',
+          'HTTP-Referer': 'https://github.com/dilkuwor/routercode',
           'X-Title': 'routercode'
         }
       });

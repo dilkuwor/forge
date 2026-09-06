@@ -7,10 +7,8 @@ A fast, lightweight terminal coding agent. Run `rcd` inside any project folder, 
 Install the standalone binary directly via curl (no Node.js required):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOU/routercode/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dilkuwor/routercode/main/install.sh | bash
 ```
-
-> **Note:** Replace `YOU/routercode` with your actual GitHub repository path after publishing.
 
 Then:
 1. **Restart your terminal** (or run `source ~/.zshrc` / `source ~/.bashrc`).

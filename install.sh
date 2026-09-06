@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# Repository placeholder - replace YOU/routercode with your actual owner/repo
-REPO="YOU/routercode"
+REPO="dilkuwor/routercode"
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"
