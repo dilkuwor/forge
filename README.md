@@ -325,10 +325,31 @@ node dist/cli.js run "explain this codebase"
 
 ## Docker (Isolated Environment)
 
-A `Dockerfile` is included for testing inside an isolated container without local Node.js or modifying the host filesystem. The Docker image does not contain the user repository.
+`routercode` is available on **Docker Hub**: [**`dpksamir/routercode`**](https://hub.docker.com/r/dpksamir/routercode).
+
+You can run `rcd` inside an isolated container without installing Node.js or modifying host system state. The Docker container mounts your current workspace at runtime and does not contain the user repository in the image.
+
+### Run with Docker Hub Image
 
 ```bash
-# Build Docker image
+# Pull the latest image
+docker pull dpksamir/routercode:latest
+
+# Run inside any project directory
+docker run --rm -it \
+  -v "$PWD":/workspace \
+  -w /workspace \
+  -e OPENROUTER_API_KEY \
+  -e NVIDIA_API_KEY \
+  dpksamir/routercode
+```
+
+### Build and Run Locally
+
+Alternatively, you can build the image directly from the included `Dockerfile`:
+
+```bash
+# Build local Docker image
 docker build -t rcd .
 
 # Run inside any workspace directory
